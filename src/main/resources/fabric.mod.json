@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "farout",
+	"version": "${version}",
+	"name": "Farout",
+	"description": "Time how long it takes to walk 10,000 blocks in one direction.",
+	"authors": [
+		"Jasper van der Meer"
+	],
+	"license": "All-Rights-Reserved",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"nl.jasperfrontend.farout.Farout"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
