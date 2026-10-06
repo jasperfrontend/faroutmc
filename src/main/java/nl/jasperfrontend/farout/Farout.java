@@ -47,13 +47,19 @@ public class Farout implements ModInitializer {
 	private static final int ACTION_BAR_INTERVAL_TICKS = 10;
 
 	private static final Map<UUID, Run> RUNS = new HashMap<>();
+	/** Players standing in the start area, picking a direction; value is the hub centre. */
+	private static final Map<UUID, BlockPos> IN_HUB = new HashMap<>();
+	/** Centre of the built hub, so its portals work without a command (e.g. after dying); null if none. */
+	private static BlockPos hubCentre;
+	private static boolean hubLookedUp;
 
 	@Override
 	public void onInitialize() {
 		PayloadTypeRegistry.clientboundPlay().register(RunStatePayload.TYPE, RunStatePayload.CODEC);
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-			LiteralArgumentBuilder<CommandSourceStack> start = Commands.literal("start");
+			LiteralArgumentBuilder<CommandSourceStack> start = Commands.literal("start")
+				.executes(ctx -> enterHub(ctx.getSource().getPlayerOrException()));
 			for (Heading heading : Heading.values()) {
 				start.then(Commands.literal(heading.id())
 					.executes(ctx -> start(ctx.getSource().getPlayerOrException(), heading)));
@@ -68,6 +74,7 @@ public class Farout implements ModInitializer {
 
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof ServerPlayer player) {
+				leaveHub(player);
 				Run run = endRun(player);
 				if (run != null) {
 					int progress = run.heading.progress(run.origin, player.blockPosition());
@@ -79,6 +86,9 @@ public class Farout implements ModInitializer {
 		});
 
 		ServerEntityLevelChangeEvents.AFTER_PLAYER_CHANGE_LEVEL.register((player, from, to) -> {
+			if (to.dimension() != Level.OVERWORLD) {
+				leaveHub(player);
+			}
 			if (to.dimension() != Level.OVERWORLD && endRun(player) != null) {
 				player.sendSystemMessage(Component.literal("Run cancelled: left the overworld")
 					.withStyle(ChatFormatting.RED));
@@ -87,14 +97,43 @@ public class Farout implements ModInitializer {
 
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			RUNS.remove(handler.getPlayer().getUUID());
+			IN_HUB.remove(handler.getPlayer().getUUID());
 			SplitBoard.forget(handler.getPlayer().getUUID());
 		});
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
 			RUNS.clear();
+			IN_HUB.clear();
+			hubCentre = null;
+			hubLookedUp = false;
 			SplitBoard.forgetAll();
 		});
 	}
 
+	/** /farout start: build the start area at spawn and put the player in its centre to pick a lane. */
+	private static int enterHub(ServerPlayer player) {
+		if (RUNS.containsKey(player.getUUID())) {
+			player.sendSystemMessage(Component.literal("A run is already active. Use /farout stop first.")
+				.withStyle(ChatFormatting.RED));
+			return 0;
+		}
+
+		ServerLevel overworld = player.level().getServer().overworld();
+		BlockPos centre = SpawnHub.centre(overworld);
+		SpawnHub.build(overworld, centre);
+		SpawnHub.labels(overworld, centre);
+		hubCentre = centre;
+		hubLookedUp = true;
+		player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
+			Heading.NORTH.yaw, 0f, true);
+		IN_HUB.put(player.getUUID(), centre);
+		player.getInventory().clearContent();
+		SplitBoard.clear(player);
+		sendRunState(player, true);
+		player.sendSystemMessage(Component.literal("Walk through a portal to pick your direction."));
+		return 1;
+	}
+
+	/** /farout start &lt;direction&gt;: skip the start area and start straight away from spawn. */
 	private static int start(ServerPlayer player, Heading heading) {
 		if (RUNS.containsKey(player.getUUID())) {
 			player.sendSystemMessage(Component.literal("A run is already active. Use /farout stop first.")
@@ -102,17 +141,61 @@ public class Farout implements ModInitializer {
 			return 0;
 		}
 
-		BlockPos origin = teleportToSpawn(player, heading.yaw);
+		IN_HUB.remove(player.getUUID());
+		beginRun(player, heading, teleportToSpawn(player, heading.yaw));
+		return 1;
+	}
+
+	private static void beginRun(ServerPlayer player, Heading heading, BlockPos origin) {
+		// Start like a brand-new world: a freshly spawned player, clear skies, at the time a new world begins.
+		resetToFreshSpawn(player);
+		MinecraftServer server = player.level().getServer();
+		CommandSourceStack source = server.createCommandSourceStack().withSuppressedOutput();
+		server.getCommands().performPrefixedCommand(source, "time set 0");
+		server.getCommands().performPrefixedCommand(source, "weather clear");
+
 		RUNS.put(player.getUUID(), new Run(heading, origin, PersonalBests.load(heading)));
 		sendRunState(player, true);
 		SplitBoard.show(player, heading);
 		player.sendSystemMessage(Component.literal(
 			"Farout started: head " + heading.label + " for " + Format.blocks(TARGET) + " blocks."));
-		return 1;
+	}
+
+	/** Everything back to how a new player spawns into a new world, so nothing carries over between runs. */
+	private static void resetToFreshSpawn(ServerPlayer player) {
+		player.getInventory().clearContent();
+		player.getEnderChestInventory().clearContent();
+		player.removeAllEffects();
+		player.setHealth(player.getMaxHealth());
+		player.setAbsorptionAmount(0f);
+		player.getFoodData().setFoodLevel(20);
+		player.getFoodData().setSaturation(5f);
+		player.setExperienceLevels(0);
+		player.setExperiencePoints(0);
+		player.clearFire();
+		player.setTicksFrozen(0);
+		player.setAirSupply(player.getMaxAirSupply());
+		player.resetFallDistance();
+		player.setArrowCount(0);
+		player.setStingerCount(0);
+	}
+
+	/** Takes the player out of the start area, if they're in it; returns whether they were. */
+	private static boolean leaveHub(ServerPlayer player) {
+		if (IN_HUB.remove(player.getUUID()) == null) {
+			return false;
+		}
+		sendRunState(player, false);
+		return true;
 	}
 
 	private static int stop(ServerPlayer player) {
 		boolean hadBoard = SplitBoard.clear(player);
+		if (leaveHub(player)) {
+			player.sendOverlayMessage(Component.empty());
+			player.sendSystemMessage(Component.literal("Left the start area."));
+			return 1;
+		}
 		if (endRun(player) == null) {
 			// After a finish, death or cancel the splits stay on screen until the next start or this.
 			player.sendSystemMessage(Component.literal(hadBoard ? "Splits cleared." : "No active run."));
@@ -122,7 +205,11 @@ public class Farout implements ModInitializer {
 		player.sendOverlayMessage(Component.empty());
 		// Everything carried was gathered during the run, so it goes with it (armour and offhand too).
 		player.getInventory().clearContent();
-		teleportToSpawn(player, null);
+		// Back to the middle of the start area; vanilla's spawn search could land on a lane wall.
+		ServerLevel overworld = player.level().getServer().overworld();
+		BlockPos centre = SpawnHub.centre(overworld);
+		player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
+			Heading.NORTH.yaw, 0f, true);
 		player.sendSystemMessage(Component.literal("Run stopped. Inventory cleared."));
 		return 1;
 	}
@@ -143,18 +230,19 @@ public class Farout implements ModInitializer {
 	}
 
 	/** Teleports to a safe spot at world spawn and returns that block position. */
-	private static BlockPos teleportToSpawn(ServerPlayer player, Float yaw) {
+	private static BlockPos teleportToSpawn(ServerPlayer player, float yaw) {
 		ServerLevel overworld = player.level().getServer().overworld();
 		LevelData.RespawnData spawn = overworld.getRespawnData();
 		// Vanilla's new-player placement: loads the chunks and searches the spawn radius for a safe spot.
 		BlockPos pos = player.adjustSpawnLocation(overworld, spawn.pos());
 
-		player.teleportTo(overworld, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, Set.of(),
-			yaw != null ? yaw : spawn.yaw(), 0f, true);
+		player.teleportTo(overworld, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, Set.of(), yaw, 0f, true);
 		return pos;
 	}
 
 	private static void tick(MinecraftServer server) {
+		tickHub(server);
+
 		Iterator<Map.Entry<UUID, Run>> it = RUNS.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry<UUID, Run> entry = it.next();
@@ -187,6 +275,65 @@ public class Farout implements ModInitializer {
 
 			if (run.ticks % ACTION_BAR_INTERVAL_TICKS == 0) {
 				player.sendOverlayMessage(Component.literal(counter(progress, run.ticks)));
+			}
+		}
+	}
+
+	/** Starts the run for anyone who stepped through a portal; shows the portals to everyone still choosing. */
+	private static void tickHub(MinecraftServer server) {
+		ServerLevel overworld = server.overworld();
+		if (!hubLookedUp) {
+			// Once per server start: a hub built in an earlier session should work straight away too.
+			hubLookedUp = true;
+			BlockPos centre = SpawnHub.centre(overworld);
+			hubCentre = SpawnHub.isBuilt(overworld, centre) ? centre : null;
+		}
+		if (hubCentre != null) {
+			for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+				UUID id = player.getUUID();
+				if (player.level() == overworld && !RUNS.containsKey(id) && !IN_HUB.containsKey(id)
+					&& SpawnHub.inCentre(hubCentre, player.blockPosition())) {
+					IN_HUB.put(id, hubCentre);
+					sendRunState(player, true);
+				}
+			}
+		}
+
+		Iterator<Map.Entry<UUID, BlockPos>> it = IN_HUB.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry<UUID, BlockPos> entry = it.next();
+			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+			if (player == null) {
+				it.remove();
+				continue;
+			}
+
+			BlockPos centre = entry.getValue();
+			if (!SpawnHub.isNear(centre, player.blockPosition()) || player.level() != overworld) {
+				// Left without using a portal (teleported, climbed out): stand down until they're back in the centre.
+				it.remove();
+				sendRunState(player, false);
+				player.sendOverlayMessage(Component.empty());
+				continue;
+			}
+			Heading heading = SpawnHub.crossed(centre, player.blockPosition());
+			if (heading != null) {
+				it.remove();
+				// The run counts from the portal line, so the timer and splits start right here.
+				beginRun(player, heading, player.blockPosition());
+				player.connection.send(new ClientboundSetTitlesAnimationPacket(5, 30, 10));
+				player.connection.send(new ClientboundSetSubtitleTextPacket(Component.empty()));
+				player.connection.send(new ClientboundSetTitleTextPacket(
+					Component.literal(heading.label).withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD)));
+				continue;
+			}
+
+			long time = server.getTickCount();
+			if (time % 5 == 0) {
+				SpawnHub.particles(server.overworld(), player, centre);
+			}
+			if (time % ACTION_BAR_INTERVAL_TICKS == 0) {
+				player.sendOverlayMessage(Component.literal("Walk through a portal to start"));
 			}
 		}
 	}
