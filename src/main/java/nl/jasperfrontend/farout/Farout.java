@@ -7,7 +7,9 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerEntityLevelChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -24,7 +26,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.storage.LevelData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,8 @@ public class Farout implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		PayloadTypeRegistry.clientboundPlay().register(RunStatePayload.TYPE, RunStatePayload.CODEC);
+
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			LiteralArgumentBuilder<CommandSourceStack> start = Commands.literal("start");
 			for (Heading heading : Heading.values()) {
@@ -65,7 +68,7 @@ public class Farout implements ModInitializer {
 
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof ServerPlayer player) {
-				Run run = RUNS.remove(player.getUUID());
+				Run run = endRun(player);
 				if (run != null) {
 					int progress = run.heading.progress(run.origin, player.blockPosition());
 					player.sendSystemMessage(Component.literal(
@@ -76,7 +79,7 @@ public class Farout implements ModInitializer {
 		});
 
 		ServerEntityLevelChangeEvents.AFTER_PLAYER_CHANGE_LEVEL.register((player, from, to) -> {
-			if (to.dimension() != Level.OVERWORLD && RUNS.remove(player.getUUID()) != null) {
+			if (to.dimension() != Level.OVERWORLD && endRun(player) != null) {
 				player.sendSystemMessage(Component.literal("Run cancelled: left the overworld")
 					.withStyle(ChatFormatting.RED));
 			}
@@ -95,13 +98,14 @@ public class Farout implements ModInitializer {
 
 		BlockPos origin = teleportToSpawn(player, heading.yaw);
 		RUNS.put(player.getUUID(), new Run(heading, origin));
+		sendRunState(player, true);
 		player.sendSystemMessage(Component.literal(
 			"Farout started: head " + heading.label + " for " + Format.blocks(TARGET) + " blocks."));
 		return 1;
 	}
 
 	private static int stop(ServerPlayer player) {
-		if (RUNS.remove(player.getUUID()) == null) {
+		if (endRun(player) == null) {
 			player.sendSystemMessage(Component.literal("No active run."));
 			return 0;
 		}
@@ -112,13 +116,27 @@ public class Farout implements ModInitializer {
 		return 1;
 	}
 
-	/** Teleports to the top of the world spawn column and returns that block position. */
+	/** Removes the player's run, if any, and tells their client to stop drawing run HUD. */
+	private static Run endRun(ServerPlayer player) {
+		Run run = RUNS.remove(player.getUUID());
+		if (run != null) {
+			sendRunState(player, false);
+		}
+		return run;
+	}
+
+	private static void sendRunState(ServerPlayer player, boolean active) {
+		if (ServerPlayNetworking.canSend(player, RunStatePayload.TYPE)) {
+			ServerPlayNetworking.send(player, new RunStatePayload(active));
+		}
+	}
+
+	/** Teleports to a safe spot at world spawn and returns that block position. */
 	private static BlockPos teleportToSpawn(ServerPlayer player, Float yaw) {
 		ServerLevel overworld = player.level().getServer().overworld();
 		LevelData.RespawnData spawn = overworld.getRespawnData();
-		BlockPos column = spawn.pos();
-		int y = overworld.getHeight(Heightmap.Types.MOTION_BLOCKING, column.getX(), column.getZ());
-		BlockPos pos = new BlockPos(column.getX(), y, column.getZ());
+		// Vanilla's new-player placement: loads the chunks and searches the spawn radius for a safe spot.
+		BlockPos pos = player.adjustSpawnLocation(overworld, spawn.pos());
 
 		player.teleportTo(overworld, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, Set.of(),
 			yaw != null ? yaw : spawn.yaw(), 0f, true);
@@ -148,6 +166,7 @@ public class Farout implements ModInitializer {
 
 			if (progress >= TARGET) {
 				it.remove();
+				sendRunState(player, false);
 				finish(server, player, run);
 				continue;
 			}

@@ -3,9 +3,12 @@ plugins {
 }
 
 loom {
+	splitEnvironmentSourceSets()
+
 	mods {
 		"farout" {
 			sourceSet sourceSets.main
+			sourceSet sourceSets.client
 		}
 	}
 

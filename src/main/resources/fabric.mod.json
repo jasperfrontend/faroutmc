@@ -12,10 +12,13 @@
 	"entrypoints": {
 		"main": [
 			"nl.jasperfrontend.farout.Farout"
+		],
+		"client": [
+			"nl.jasperfrontend.farout.client.FaroutClient"
 		]
 	},
 	"depends": {
-		"fabricloader": ">=0.19.5",
+		"fabricloader": ">=0.19.3",
 		"minecraft": "~26.1.2",
 		"java": ">=25",
 		"fabric-api": "*"
