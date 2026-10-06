@@ -2,6 +2,7 @@ package nl.jasperfrontend.farout;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.numbers.BlankFormat;
 import net.minecraft.network.chat.numbers.FixedFormat;
 import net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket;
@@ -41,15 +42,28 @@ final class SplitBoard {
 		SHOWN.add(player.getUUID());
 	}
 
-	static void split(ServerPlayer player, int blocks, long ticks, boolean finish) {
+	/** delta = this run minus the personal best at this split, or null when there is no personal best. */
+	static void split(ServerPlayer player, int blocks, long ticks, Long delta, boolean finish) {
 		if (!SHOWN.contains(player.getUUID())) {
 			return;
 		}
 		ChatFormatting color = finish ? ChatFormatting.GOLD : ChatFormatting.GRAY;
+		MutableComponent time = Component.literal(Format.time(ticks))
+			.withStyle(finish ? ChatFormatting.GOLD : ChatFormatting.WHITE)
+			.append(delta(delta));
 		// The sidebar sorts by score, highest first; negative distance keeps the first split on top.
 		player.connection.send(new ClientboundSetScorePacket(Format.blocks(blocks), OBJECTIVE, -blocks,
 			Optional.of(Component.literal(Format.blocks(blocks)).withStyle(color)),
-			Optional.of(new FixedFormat(Component.literal(Format.time(ticks)).withStyle(finish ? ChatFormatting.GOLD : ChatFormatting.WHITE)))));
+			Optional.of(new FixedFormat(time))));
+	}
+
+	/** " -42.1" in green when ahead of the personal best, " +1:05.3" in red when behind, empty without one. */
+	static MutableComponent delta(Long delta) {
+		if (delta == null) {
+			return Component.empty();
+		}
+		ChatFormatting color = delta < 0 ? ChatFormatting.GREEN : delta > 0 ? ChatFormatting.RED : ChatFormatting.GRAY;
+		return Component.literal(" " + Format.delta(delta)).withStyle(color);
 	}
 
 	/** Removes the sidebar if the player has one; returns whether it did. */

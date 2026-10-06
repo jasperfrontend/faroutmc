@@ -103,7 +103,7 @@ public class Farout implements ModInitializer {
 		}
 
 		BlockPos origin = teleportToSpawn(player, heading.yaw);
-		RUNS.put(player.getUUID(), new Run(heading, origin));
+		RUNS.put(player.getUUID(), new Run(heading, origin, PersonalBests.load(heading)));
 		sendRunState(player, true);
 		SplitBoard.show(player, heading);
 		player.sendSystemMessage(Component.literal(
@@ -120,8 +120,10 @@ public class Farout implements ModInitializer {
 		}
 
 		player.sendOverlayMessage(Component.empty());
+		// Everything carried was gathered during the run, so it goes with it (armour and offhand too).
+		player.getInventory().clearContent();
 		teleportToSpawn(player, null);
-		player.sendSystemMessage(Component.literal("Run stopped."));
+		player.sendSystemMessage(Component.literal("Run stopped. Inventory cleared."));
 		return 1;
 	}
 
@@ -167,10 +169,12 @@ public class Farout implements ModInitializer {
 			int progress = run.heading.progress(run.origin, player.blockPosition());
 
 			while (progress >= run.nextSplit && run.nextSplit < TARGET) {
+				run.splits.add(run.ticks);
+				Long delta = run.deltaAtLastSplit();
 				player.sendSystemMessage(Component.literal(
 					"Split " + Format.blocks(run.nextSplit) + ": " + Format.time(run.ticks)
-				).withStyle(ChatFormatting.GRAY));
-				SplitBoard.split(player, run.nextSplit, run.ticks, false);
+				).withStyle(ChatFormatting.GRAY).append(SplitBoard.delta(delta)));
+				SplitBoard.split(player, run.nextSplit, run.ticks, delta, false);
 				run.nextSplit += SPLIT_INTERVAL;
 			}
 
@@ -193,14 +197,30 @@ public class Farout implements ModInitializer {
 
 	private static void finish(MinecraftServer server, ServerPlayer player, Run run) {
 		String result = Format.blocks(TARGET) + " blocks in " + Format.time(run.ticks);
+		run.splits.add(run.ticks);
+		Long delta = run.deltaAtLastSplit();
+		boolean newPb = run.pb == null || delta != null && delta < 0;
 
 		player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 100, 20));
-		player.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal(result)));
+		player.connection.send(new ClientboundSetSubtitleTextPacket(
+			Component.literal(result).append(SplitBoard.delta(delta))));
 		player.connection.send(new ClientboundSetTitleTextPacket(
 			Component.literal("FAROUT!").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
 		player.sendOverlayMessage(Component.literal(counter(TARGET, run.ticks)));
-		SplitBoard.split(player, TARGET, run.ticks, true);
-		player.sendSystemMessage(Component.literal("FAROUT! " + result).withStyle(ChatFormatting.GOLD));
+		SplitBoard.split(player, TARGET, run.ticks, delta, true);
+		player.sendSystemMessage(Component.literal("FAROUT! " + result).withStyle(ChatFormatting.GOLD)
+			.append(SplitBoard.delta(delta)));
+		if (newPb) {
+			player.sendSystemMessage(Component.literal("New personal best!")
+				.withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+			try {
+				PersonalBests.save(run.heading, run.splits);
+			} catch (IOException e) {
+				LOGGER.error("Could not write personal bests", e);
+				player.sendSystemMessage(Component.literal("Could not save personal best: " + e.getMessage())
+					.withStyle(ChatFormatting.RED));
+			}
+		}
 		// Player#playSound excludes the player itself on the server side, so send the packet directly.
 		player.connection.send(new ClientboundSoundPacket(
 			BuiltInRegistries.SOUND_EVENT.wrapAsHolder(SoundEvents.UI_TOAST_CHALLENGE_COMPLETE),
