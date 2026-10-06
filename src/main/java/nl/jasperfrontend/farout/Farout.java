@@ -85,8 +85,14 @@ public class Farout implements ModInitializer {
 			}
 		});
 
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> RUNS.remove(handler.getPlayer().getUUID()));
-		ServerLifecycleEvents.SERVER_STOPPED.register(server -> RUNS.clear());
+		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+			RUNS.remove(handler.getPlayer().getUUID());
+			SplitBoard.forget(handler.getPlayer().getUUID());
+		});
+		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+			RUNS.clear();
+			SplitBoard.forgetAll();
+		});
 	}
 
 	private static int start(ServerPlayer player, Heading heading) {
@@ -99,15 +105,18 @@ public class Farout implements ModInitializer {
 		BlockPos origin = teleportToSpawn(player, heading.yaw);
 		RUNS.put(player.getUUID(), new Run(heading, origin));
 		sendRunState(player, true);
+		SplitBoard.show(player, heading);
 		player.sendSystemMessage(Component.literal(
 			"Farout started: head " + heading.label + " for " + Format.blocks(TARGET) + " blocks."));
 		return 1;
 	}
 
 	private static int stop(ServerPlayer player) {
+		boolean hadBoard = SplitBoard.clear(player);
 		if (endRun(player) == null) {
-			player.sendSystemMessage(Component.literal("No active run."));
-			return 0;
+			// After a finish, death or cancel the splits stay on screen until the next start or this.
+			player.sendSystemMessage(Component.literal(hadBoard ? "Splits cleared." : "No active run."));
+			return hadBoard ? 1 : 0;
 		}
 
 		player.sendOverlayMessage(Component.empty());
@@ -161,6 +170,7 @@ public class Farout implements ModInitializer {
 				player.sendSystemMessage(Component.literal(
 					"Split " + Format.blocks(run.nextSplit) + ": " + Format.time(run.ticks)
 				).withStyle(ChatFormatting.GRAY));
+				SplitBoard.split(player, run.nextSplit, run.ticks, false);
 				run.nextSplit += SPLIT_INTERVAL;
 			}
 
@@ -172,14 +182,13 @@ public class Farout implements ModInitializer {
 			}
 
 			if (run.ticks % ACTION_BAR_INTERVAL_TICKS == 0) {
-				player.sendOverlayMessage(Component.literal(counter(run.heading, progress, run.ticks)));
+				player.sendOverlayMessage(Component.literal(counter(progress, run.ticks)));
 			}
 		}
 	}
 
-	private static String counter(Heading heading, int progress, long ticks) {
-		return "Farout · " + heading.label + " · " + Format.blocks(progress) + " / " + Format.blocks(TARGET)
-			+ " · " + Format.time(ticks);
+	private static String counter(int progress, long ticks) {
+		return Format.blocks(progress) + " / " + Format.blocks(TARGET) + " · " + Format.time(ticks);
 	}
 
 	private static void finish(MinecraftServer server, ServerPlayer player, Run run) {
@@ -189,7 +198,8 @@ public class Farout implements ModInitializer {
 		player.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal(result)));
 		player.connection.send(new ClientboundSetTitleTextPacket(
 			Component.literal("FAROUT!").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
-		player.sendOverlayMessage(Component.literal(counter(run.heading, TARGET, run.ticks)));
+		player.sendOverlayMessage(Component.literal(counter(TARGET, run.ticks)));
+		SplitBoard.split(player, TARGET, run.ticks, true);
 		player.sendSystemMessage(Component.literal("FAROUT! " + result).withStyle(ChatFormatting.GOLD));
 		// Player#playSound excludes the player itself on the server side, so send the packet directly.
 		player.connection.send(new ClientboundSoundPacket(
