@@ -45,6 +45,11 @@ final class Lane {
 		this.lastZ = player.getZ();
 	}
 
+	/** The edges for the client, which fogs up your view the further outside them you are. */
+	LanePayload payload() {
+		return new LanePayload(true, heading.stepX == 0, low, high);
+	}
+
 	boolean inside(ServerPlayer player) {
 		double lateral = heading.lateral(player.getX(), player.getZ());
 		return lateral >= low && lateral <= high;

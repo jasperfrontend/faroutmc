@@ -11,6 +11,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import nl.jasperfrontend.farout.Farout;
+import nl.jasperfrontend.farout.LanePayload;
 import nl.jasperfrontend.farout.RunStatePayload;
 
 public class FaroutClient implements ClientModInitializer {
@@ -27,7 +28,12 @@ public class FaroutClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		ClientPlayNetworking.registerGlobalReceiver(RunStatePayload.TYPE,
 			(payload, context) -> runActive = payload.active());
-		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> runActive = false);
+		ClientPlayNetworking.registerGlobalReceiver(LanePayload.TYPE, (payload, context) -> LaneFog.set(payload));
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+			runActive = false;
+			LaneFog.set(LanePayload.NONE);
+		});
+		BoatStraightener.register();
 
 		HudElementRegistry.attachElementAfter(VanillaHudElements.OVERLAY_MESSAGE,
 			Identifier.fromNamespaceAndPath(Farout.MOD_ID, "compass"),

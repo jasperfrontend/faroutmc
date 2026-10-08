@@ -57,6 +57,7 @@ public class Farout implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		PayloadTypeRegistry.clientboundPlay().register(RunStatePayload.TYPE, RunStatePayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(LanePayload.TYPE, LanePayload.CODEC);
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			LiteralArgumentBuilder<CommandSourceStack> start = Commands.literal("start")
@@ -195,6 +196,9 @@ public class Farout implements ModInitializer {
 		Lane lane = new Lane(heading, laneCentre, settings.pathWidth, settings.leewayBlocks, player);
 		RUNS.put(player.getUUID(), new Run(heading, origin, lane, PersonalBests.load(heading)));
 		sendRunState(player, true);
+		if (ServerPlayNetworking.canSend(player, LanePayload.TYPE)) {
+			ServerPlayNetworking.send(player, lane.payload());
+		}
 		SplitBoard.show(player, heading);
 		player.sendSystemMessage(Component.literal(
 			"Farout started: head " + heading.label + " for " + Format.blocks(TARGET) + " blocks. Stay in the "
@@ -266,6 +270,10 @@ public class Farout implements ModInitializer {
 	private static void sendRunState(ServerPlayer player, boolean active) {
 		if (ServerPlayNetworking.canSend(player, RunStatePayload.TYPE)) {
 			ServerPlayNetworking.send(player, new RunStatePayload(active));
+		}
+		// Every way a run ends comes through here, so the lane fog always clears.
+		if (!active && ServerPlayNetworking.canSend(player, LanePayload.TYPE)) {
+			ServerPlayNetworking.send(player, LanePayload.NONE);
 		}
 	}
 

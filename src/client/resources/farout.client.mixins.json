@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"package": "nl.jasperfrontend.farout.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"AbstractBoatAccessor",
+		"FogRendererMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
