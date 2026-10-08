@@ -37,6 +37,17 @@ processResources {
 	}
 }
 
+// .\gradlew deploy: build and put the jar in the CurseForge instance (deploy_dir in gradle.properties),
+// replacing any older farout jar there. Every other mod in that folder is left alone.
+tasks.register('deploy', Sync) {
+	from tasks.named('jar')
+	into providers.gradleProperty('deploy_dir')
+	preserve {
+		include '**'
+		exclude 'farout-*.jar'
+	}
+}
+
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 25
 }

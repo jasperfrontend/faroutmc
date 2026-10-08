@@ -1,5 +1,6 @@
 package nl.jasperfrontend.farout;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -64,8 +65,19 @@ public class Farout implements ModInitializer {
 				start.then(Commands.literal(heading.id())
 					.executes(ctx -> start(ctx.getSource().getPlayerOrException(), heading)));
 			}
+			LiteralArgumentBuilder<CommandSourceStack> settings = Commands.literal("settings")
+				.executes(ctx -> showSettings(ctx.getSource()));
+			settings.then(Commands.literal(Settings.PATH_WIDTH)
+				.then(Commands.argument("blocks", IntegerArgumentType.integer(1, 64))
+					.executes(ctx -> setSetting(ctx.getSource(), Settings.PATH_WIDTH,
+						IntegerArgumentType.getInteger(ctx, "blocks")))));
+			settings.then(Commands.literal(Settings.LEEWAY_BLOCKS)
+				.then(Commands.argument("blocks", IntegerArgumentType.integer(0, 100_000))
+					.executes(ctx -> setSetting(ctx.getSource(), Settings.LEEWAY_BLOCKS,
+						IntegerArgumentType.getInteger(ctx, "blocks")))));
 			dispatcher.register(Commands.literal("farout")
 				.then(start)
+				.then(settings)
 				.then(Commands.literal("stop")
 					.executes(ctx -> stop(ctx.getSource().getPlayerOrException()))));
 		});
@@ -142,11 +154,36 @@ public class Farout implements ModInitializer {
 		}
 
 		IN_HUB.remove(player.getUUID());
-		beginRun(player, heading, teleportToSpawn(player, heading.yaw));
+		BlockPos origin = teleportToSpawn(player, heading.yaw);
+		beginRun(player, heading, origin, heading.lateral(origin));
 		return 1;
 	}
 
-	private static void beginRun(ServerPlayer player, Heading heading, BlockPos origin) {
+	private static int showSettings(CommandSourceStack source) {
+		Settings settings = Settings.load();
+		source.sendSystemMessage(Component.literal("Farout settings (config/farout/settings.properties):"));
+		source.sendSystemMessage(Component.literal("  " + Settings.PATH_WIDTH + ": " + settings.pathWidth
+			+ " (default " + Settings.DEFAULT_PATH_WIDTH + ")"));
+		source.sendSystemMessage(Component.literal("  " + Settings.LEEWAY_BLOCKS + ": " + settings.leewayBlocks
+			+ " (default " + Settings.DEFAULT_LEEWAY_BLOCKS + ")"));
+		return 1;
+	}
+
+	private static int setSetting(CommandSourceStack source, String name, int value) {
+		try {
+			Settings.load().with(name, value).save();
+		} catch (IOException e) {
+			LOGGER.error("Could not write settings", e);
+			source.sendSystemMessage(Component.literal("Could not save settings: " + e.getMessage())
+				.withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		source.sendSystemMessage(Component.literal(name + " set to " + value + ", from your next run on."));
+		return 1;
+	}
+
+	/** laneCentre: the sideways block coordinate the lane is centred on. */
+	private static void beginRun(ServerPlayer player, Heading heading, BlockPos origin, int laneCentre) {
 		// Start like a brand-new world: a freshly spawned player, clear skies, at the time a new world begins.
 		resetToFreshSpawn(player);
 		MinecraftServer server = player.level().getServer();
@@ -154,11 +191,14 @@ public class Farout implements ModInitializer {
 		server.getCommands().performPrefixedCommand(source, "time set 0");
 		server.getCommands().performPrefixedCommand(source, "weather clear");
 
-		RUNS.put(player.getUUID(), new Run(heading, origin, PersonalBests.load(heading)));
+		Settings settings = Settings.load();
+		Lane lane = new Lane(heading, laneCentre, settings.pathWidth, settings.leewayBlocks, player);
+		RUNS.put(player.getUUID(), new Run(heading, origin, lane, PersonalBests.load(heading)));
 		sendRunState(player, true);
 		SplitBoard.show(player, heading);
 		player.sendSystemMessage(Component.literal(
-			"Farout started: head " + heading.label + " for " + Format.blocks(TARGET) + " blocks."));
+			"Farout started: head " + heading.label + " for " + Format.blocks(TARGET) + " blocks. Stay in the "
+				+ settings.pathWidth + "-wide lane; " + Format.blocks(settings.leewayBlocks) + " blocks of leeway."));
 	}
 
 	/** Everything back to how a new player spawns into a new world, so nothing carries over between runs. */
@@ -273,8 +313,20 @@ public class Farout implements ModInitializer {
 				continue;
 			}
 
-			if (run.ticks % ACTION_BAR_INTERVAL_TICKS == 0) {
-				player.sendOverlayMessage(Component.literal(counter(progress, run.ticks)));
+			boolean leewayUsed = run.lane.tick(player, run.ticks);
+			if (run.lane.exhausted()) {
+				it.remove();
+				sendRunState(player, false);
+				player.sendOverlayMessage(Component.literal("Out of leeway!").withStyle(ChatFormatting.RED));
+				player.sendSystemMessage(Component.literal(
+					"Out of leeway! Run failed at " + Format.blocks(progress) + " blocks (" + Format.time(run.ticks) + ")"
+				).withStyle(ChatFormatting.RED));
+				Lane.strike(player);
+				continue;
+			}
+
+			if (leewayUsed || run.ticks % ACTION_BAR_INTERVAL_TICKS == 0) {
+				player.sendOverlayMessage(counter(progress, run.ticks, run.lane, run.lane.inside(player)));
 			}
 		}
 	}
@@ -320,7 +372,8 @@ public class Farout implements ModInitializer {
 			if (heading != null) {
 				it.remove();
 				// The run counts from the portal line, so the timer and splits start right here.
-				beginRun(player, heading, player.blockPosition());
+				// The lane runs down the middle of the hub lane they walked into, wherever they crossed the portal.
+				beginRun(player, heading, player.blockPosition(), heading.lateral(centre));
 				player.connection.send(new ClientboundSetTitlesAnimationPacket(5, 30, 10));
 				player.connection.send(new ClientboundSetSubtitleTextPacket(Component.empty()));
 				player.connection.send(new ClientboundSetTitleTextPacket(
@@ -340,6 +393,13 @@ public class Farout implements ModInitializer {
 
 	private static String counter(int progress, long ticks) {
 		return Format.blocks(progress) + " / " + Format.blocks(TARGET) + " · " + Format.time(ticks);
+	}
+
+	/** The counter plus leeway left: white in the lane, red while outside it (and using it up). */
+	private static Component counter(int progress, long ticks, Lane lane, boolean inside) {
+		ChatFormatting color = inside ? ChatFormatting.WHITE : ChatFormatting.RED;
+		return Component.literal(counter(progress, ticks) + " · ")
+			.append(Component.literal("leeway " + Format.blocks(lane.left())).withStyle(color));
 	}
 
 	private static void finish(MinecraftServer server, ServerPlayer player, Run run) {
