@@ -1,0 +1,18 @@
+{
+  "type": "farout:power_up",
+  "category": "equipment",
+  "power": "morning_coffee",
+  "pattern": [
+    "R R",
+    "RCR",
+    "RBR"
+  ],
+  "key": {
+    "R": "#minecraft:buttons",
+    "C": "#minecraft:beds",
+    "B": "minecraft:torch"
+  },
+  "result": {
+    "id": "minecraft:red_bed"
+  }
+}

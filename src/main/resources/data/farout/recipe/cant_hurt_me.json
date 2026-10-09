@@ -1,0 +1,18 @@
+{
+  "type": "farout:power_up",
+  "category": "equipment",
+  "power": "cant_hurt_me",
+  "pattern": [
+    "R R",
+    "RCR",
+    "RBR"
+  ],
+  "key": {
+    "R": "#minecraft:logs",
+    "C": "minecraft:shield",
+    "B": "#minecraft:wool_carpets"
+  },
+  "result": {
+    "id": "minecraft:shield"
+  }
+}

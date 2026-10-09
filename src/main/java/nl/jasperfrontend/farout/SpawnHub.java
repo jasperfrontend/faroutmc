@@ -33,7 +33,8 @@ final class SpawnHub {
 	private static final int PORTAL = HALF + 1;
 	private static final int REACH = HALF + LANE;
 
-	private static final String LABEL_TAG = "farout_hub";
+	/** Marks every entity the hub summons, so a rebuild can remove the old ones first. */
+	static final String HUB_TAG = "farout_hub";
 	// Roughly eye level (1.62) plus room for the 2x-scaled text, which grows upwards from its anchor.
 	private static final double LABEL_HEIGHT = 1.7;
 
@@ -80,14 +81,15 @@ final class SpawnHub {
 	}
 
 	/**
-	 * Floating direction names above each portal line: vanilla text displays, summoned with the /summon
-	 * command because TextDisplay's setters are private. Old ones are removed first so rebuilds don't stack.
+	 * Floating direction names above each portal line, and the power-up recipes in the corners: vanilla
+	 * display entities, summoned with the /summon command because TextDisplay's setters are private. Old
+	 * ones are removed first so rebuilds don't stack.
 	 */
 	static void labels(ServerLevel level, BlockPos c) {
 		CommandSourceStack source = level.getServer().createCommandSourceStack()
 			.withLevel(level).withSuppressedOutput();
 		Commands commands = level.getServer().getCommands();
-		commands.performPrefixedCommand(source, "kill @e[type=minecraft:text_display,tag=" + LABEL_TAG + "]");
+		commands.performPrefixedCommand(source, "kill @e[tag=" + HUB_TAG + "]");
 
 		double x = c.getX() + 0.5;
 		double y = c.getY() + LABEL_HEIGHT;
@@ -96,6 +98,7 @@ final class SpawnHub {
 		label(commands, source, Heading.SOUTH, x, y, z + PORTAL);
 		label(commands, source, Heading.EAST, x + PORTAL, y, z);
 		label(commands, source, Heading.WEST, x - PORTAL, y, z);
+		RecipeBoard.build(commands, source, c);
 	}
 
 	private static void label(Commands commands, CommandSourceStack source, Heading heading, double x, double y, double z) {
@@ -104,7 +107,7 @@ final class SpawnHub {
 				+ "text:{text:\"%s\",color:\"light_purple\",bold:true},"
 				+ "transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],"
 				+ "translation:[0f,0f,0f],scale:[2f,2f,2f]}}",
-			x, y, z, LABEL_TAG, heading.label.toUpperCase(Locale.ROOT)));
+			x, y, z, HUB_TAG, heading.label.toUpperCase(Locale.ROOT)));
 	}
 
 	private static boolean isPortal(int ax, int az) {

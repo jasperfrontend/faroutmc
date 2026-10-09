@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "nl.jasperfrontend.farout.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"CraftingMenuMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

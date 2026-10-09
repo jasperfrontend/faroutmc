@@ -1,0 +1,18 @@
+{
+  "type": "farout:power_up",
+  "category": "equipment",
+  "power": "mountain_hop",
+  "pattern": [
+    "R R",
+    "RCR",
+    "RBR"
+  ],
+  "key": {
+    "R": "minecraft:coal",
+    "C": "#minecraft:foot_armor",
+    "B": "minecraft:feather"
+  },
+  "result": {
+    "id": "minecraft:leather_boots"
+  }
+}

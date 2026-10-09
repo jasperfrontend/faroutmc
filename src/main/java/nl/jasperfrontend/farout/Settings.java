@@ -17,8 +17,8 @@ final class Settings {
 	static final String PATH_WIDTH = "pathWidth";
 	static final String LEEWAY_BLOCKS = "leewayBlocks";
 
-	static final int DEFAULT_PATH_WIDTH = 5;
-	static final int DEFAULT_LEEWAY_BLOCKS = 100;
+	static final int DEFAULT_PATH_WIDTH = 7;
+	static final int DEFAULT_LEEWAY_BLOCKS = 200;
 
 	/** Width in blocks of the lane you must stay in, centred on the start line. */
 	final int pathWidth;

@@ -18,6 +18,7 @@
 		]
 	},
 	"mixins": [
+		"farout.mixins.json",
 		{
 			"config": "farout.client.mixins.json",
 			"environment": "client"

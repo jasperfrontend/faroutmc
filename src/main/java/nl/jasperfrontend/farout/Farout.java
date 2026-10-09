@@ -15,12 +15,14 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -58,6 +60,9 @@ public class Farout implements ModInitializer {
 	public void onInitialize() {
 		PayloadTypeRegistry.clientboundPlay().register(RunStatePayload.TYPE, RunStatePayload.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(LanePayload.TYPE, LanePayload.CODEC);
+		Registry.register(BuiltInRegistries.RECIPE_SERIALIZER, Identifier.fromNamespaceAndPath(MOD_ID, "power_up"),
+			PowerUpRecipe.SERIALIZER);
+		PowerUps.register();
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			LiteralArgumentBuilder<CommandSourceStack> start = Commands.literal("start")
@@ -88,6 +93,7 @@ public class Farout implements ModInitializer {
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof ServerPlayer player) {
 				leaveHub(player);
+				PowerUps.clear(player);
 				Run run = endRun(player);
 				if (run != null) {
 					int progress = run.heading.progress(run.origin, player.blockPosition());
@@ -108,7 +114,10 @@ public class Farout implements ModInitializer {
 			}
 		});
 
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+			PowerUps.unlockRecipes(handler.getPlayer()));
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+			PowerUps.clear(handler.getPlayer());
 			RUNS.remove(handler.getPlayer().getUUID());
 			IN_HUB.remove(handler.getPlayer().getUUID());
 			SplitBoard.forget(handler.getPlayer().getUUID());
@@ -119,6 +128,7 @@ public class Farout implements ModInitializer {
 			hubCentre = null;
 			hubLookedUp = false;
 			SplitBoard.forgetAll();
+			PowerUps.clearAll();
 		});
 	}
 
@@ -209,6 +219,7 @@ public class Farout implements ModInitializer {
 	private static void resetToFreshSpawn(ServerPlayer player) {
 		player.getInventory().clearContent();
 		player.getEnderChestInventory().clearContent();
+		PowerUps.clear(player);
 		player.removeAllEffects();
 		player.setHealth(player.getMaxHealth());
 		player.setAbsorptionAmount(0f);
@@ -247,6 +258,7 @@ public class Farout implements ModInitializer {
 		}
 
 		player.sendOverlayMessage(Component.empty());
+		PowerUps.clear(player);
 		// Everything carried was gathered during the run, so it goes with it (armour and offhand too).
 		player.getInventory().clearContent();
 		// Back to the middle of the start area; vanilla's spawn search could land on a lane wall.
@@ -290,6 +302,7 @@ public class Farout implements ModInitializer {
 
 	private static void tick(MinecraftServer server) {
 		tickHub(server);
+		PowerUps.tick(server);
 
 		Iterator<Map.Entry<UUID, Run>> it = RUNS.entrySet().iterator();
 		while (it.hasNext()) {
@@ -357,6 +370,9 @@ public class Farout implements ModInitializer {
 					sendRunState(player, true);
 				}
 			}
+		}
+		if (hubCentre != null && !IN_HUB.isEmpty() && server.getTickCount() % 20 == 0) {
+			RecipeBoard.cycle(overworld, hubCentre, server.getTickCount() / 20);
 		}
 
 		Iterator<Map.Entry<UUID, BlockPos>> it = IN_HUB.entrySet().iterator();
