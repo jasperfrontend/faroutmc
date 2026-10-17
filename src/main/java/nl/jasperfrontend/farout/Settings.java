@@ -16,18 +16,28 @@ import java.util.Properties;
 final class Settings {
 	static final String PATH_WIDTH = "pathWidth";
 	static final String LEEWAY_BLOCKS = "leewayBlocks";
+	static final String AIRTIME_HEIGHT = "airtimeHeight";
+	static final String AIRTIME_SECONDS = "airtimeSeconds";
 
 	static final int DEFAULT_PATH_WIDTH = 7;
 	static final int DEFAULT_LEEWAY_BLOCKS = 200;
+	static final int DEFAULT_AIRTIME_HEIGHT = 50;
+	static final int DEFAULT_AIRTIME_SECONDS = 10;
 
 	/** Width in blocks of the lane you must stay in, centred on the start line. */
 	final int pathWidth;
 	/** Blocks you may walk outside the lane per run; use more and you're struck down. */
 	final int leewayBlocks;
+	/** Blocks above the start area the player hangs during airtime; 0 skips airtime. */
+	final int airtimeHeight;
+	/** How long airtime lasts before the drop. */
+	final int airtimeSeconds;
 
-	private Settings(int pathWidth, int leewayBlocks) {
+	private Settings(int pathWidth, int leewayBlocks, int airtimeHeight, int airtimeSeconds) {
 		this.pathWidth = pathWidth;
 		this.leewayBlocks = leewayBlocks;
+		this.airtimeHeight = airtimeHeight;
+		this.airtimeSeconds = airtimeSeconds;
 	}
 
 	private static Path file() {
@@ -39,7 +49,9 @@ final class Settings {
 		Properties props = read();
 		Settings settings = new Settings(
 			readInt(props, PATH_WIDTH, DEFAULT_PATH_WIDTH, 1),
-			readInt(props, LEEWAY_BLOCKS, DEFAULT_LEEWAY_BLOCKS, 0));
+			readInt(props, LEEWAY_BLOCKS, DEFAULT_LEEWAY_BLOCKS, 0),
+			readInt(props, AIRTIME_HEIGHT, DEFAULT_AIRTIME_HEIGHT, 0),
+			readInt(props, AIRTIME_SECONDS, DEFAULT_AIRTIME_SECONDS, 1));
 		if (Files.notExists(file())) {
 			try {
 				settings.save();
@@ -52,8 +64,10 @@ final class Settings {
 
 	Settings with(String name, int value) {
 		return switch (name) {
-			case PATH_WIDTH -> new Settings(value, leewayBlocks);
-			case LEEWAY_BLOCKS -> new Settings(pathWidth, value);
+			case PATH_WIDTH -> new Settings(value, leewayBlocks, airtimeHeight, airtimeSeconds);
+			case LEEWAY_BLOCKS -> new Settings(pathWidth, value, airtimeHeight, airtimeSeconds);
+			case AIRTIME_HEIGHT -> new Settings(pathWidth, leewayBlocks, value, airtimeSeconds);
+			case AIRTIME_SECONDS -> new Settings(pathWidth, leewayBlocks, airtimeHeight, value);
 			default -> throw new IllegalArgumentException("Unknown setting " + name);
 		};
 	}
@@ -62,11 +76,15 @@ final class Settings {
 		Properties props = new Properties();
 		props.setProperty(PATH_WIDTH, Integer.toString(pathWidth));
 		props.setProperty(LEEWAY_BLOCKS, Integer.toString(leewayBlocks));
+		props.setProperty(AIRTIME_HEIGHT, Integer.toString(airtimeHeight));
+		props.setProperty(AIRTIME_SECONDS, Integer.toString(airtimeSeconds));
 		Path file = file();
 		Files.createDirectories(file.getParent());
 		try (Writer writer = Files.newBufferedWriter(file)) {
 			props.store(writer, "Farout settings: " + PATH_WIDTH + " = lane width in blocks, "
-				+ LEEWAY_BLOCKS + " = blocks you may walk outside it per run");
+				+ LEEWAY_BLOCKS + " = blocks you may walk outside it per run, "
+			+ AIRTIME_HEIGHT + " = blocks above the start area you hang before the drop (0 = no airtime), "
+			+ AIRTIME_SECONDS + " = seconds of airtime before the drop");
 		}
 	}
 

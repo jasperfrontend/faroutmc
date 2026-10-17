@@ -28,6 +28,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelData;
 import org.slf4j.Logger;
@@ -81,6 +82,14 @@ public class Farout implements ModInitializer {
 				.then(Commands.argument("blocks", IntegerArgumentType.integer(0, 100_000))
 					.executes(ctx -> setSetting(ctx.getSource(), Settings.LEEWAY_BLOCKS,
 						IntegerArgumentType.getInteger(ctx, "blocks")))));
+			settings.then(Commands.literal(Settings.AIRTIME_HEIGHT)
+				.then(Commands.argument("blocks", IntegerArgumentType.integer(0, 300))
+					.executes(ctx -> setSetting(ctx.getSource(), Settings.AIRTIME_HEIGHT,
+						IntegerArgumentType.getInteger(ctx, "blocks")))));
+			settings.then(Commands.literal(Settings.AIRTIME_SECONDS)
+				.then(Commands.argument("seconds", IntegerArgumentType.integer(1, 300))
+					.executes(ctx -> setSetting(ctx.getSource(), Settings.AIRTIME_SECONDS,
+						IntegerArgumentType.getInteger(ctx, "seconds")))));
 			dispatcher.register(Commands.literal("farout")
 				.then(start)
 				.then(settings)
@@ -89,9 +98,12 @@ public class Farout implements ModInitializer {
 		});
 
 		ServerTickEvents.END_SERVER_TICK.register(Farout::tick);
+		ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) ->
+			!(entity instanceof ServerPlayer player && source.is(DamageTypeTags.IS_FALL) && Airtime.protects(player)));
 
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof ServerPlayer player) {
+				Airtime.cancel(player);
 				leaveHub(player);
 				PowerUps.clear(player);
 				Run run = endRun(player);
@@ -106,6 +118,7 @@ public class Farout implements ModInitializer {
 
 		ServerEntityLevelChangeEvents.AFTER_PLAYER_CHANGE_LEVEL.register((player, from, to) -> {
 			if (to.dimension() != Level.OVERWORLD) {
+				Airtime.cancel(player);
 				leaveHub(player);
 			}
 			if (to.dimension() != Level.OVERWORLD && endRun(player) != null) {
@@ -120,6 +133,7 @@ public class Farout implements ModInitializer {
 			PowerUps.clear(handler.getPlayer());
 			RUNS.remove(handler.getPlayer().getUUID());
 			IN_HUB.remove(handler.getPlayer().getUUID());
+			Airtime.forget(server, handler.getPlayer().getUUID());
 			SplitBoard.forget(handler.getPlayer().getUUID());
 		});
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
@@ -127,12 +141,16 @@ public class Farout implements ModInitializer {
 			IN_HUB.clear();
 			hubCentre = null;
 			hubLookedUp = false;
+			Airtime.forgetAll();
 			SplitBoard.forgetAll();
 			PowerUps.clearAll();
 		});
 	}
 
-	/** /farout start: build the start area at spawn and put the player in its centre to pick a lane. */
+	/**
+	 * /farout start: build the start area at spawn and drop the player into its centre to pick a lane, after
+	 * a few seconds of airtime high above it to scout the directions.
+	 */
 	private static int enterHub(ServerPlayer player) {
 		if (RUNS.containsKey(player.getUUID())) {
 			player.sendSystemMessage(Component.literal("A run is already active. Use /farout stop first.")
@@ -146,13 +164,25 @@ public class Farout implements ModInitializer {
 		SpawnHub.labels(overworld, centre);
 		hubCentre = centre;
 		hubLookedUp = true;
-		player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
-			Heading.NORTH.yaw, 0f, true);
-		IN_HUB.put(player.getUUID(), centre);
 		player.getInventory().clearContent();
 		SplitBoard.clear(player);
-		sendRunState(player, true);
-		player.sendSystemMessage(Component.literal("Walk through a portal to pick your direction."));
+
+		Settings settings = Settings.load();
+		if (settings.airtimeHeight == 0) {
+			player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
+				Heading.NORTH.yaw, 0f, true);
+			IN_HUB.put(player.getUUID(), centre);
+			sendRunState(player, true);
+			player.sendSystemMessage(Component.literal("Walk through a portal to pick your direction."));
+			return 1;
+		}
+		// Up there they're not in the hub yet; tickHub takes them in once they land in the centre.
+		leaveHub(player);
+		Airtime.start(player, centre, settings.airtimeHeight, settings.airtimeSeconds);
+		player.sendSystemMessage(Component.literal("Airtime! ").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)
+			.append(Component.literal("You've got " + settings.airtimeSeconds + " seconds up here with the world on pause. "
+				+ "Look around and pick the direction you want to go, then drop into the start area.")
+				.withStyle(ChatFormatting.WHITE)));
 		return 1;
 	}
 
@@ -165,6 +195,7 @@ public class Farout implements ModInitializer {
 		}
 
 		IN_HUB.remove(player.getUUID());
+		Airtime.cancel(player);
 		BlockPos origin = teleportToSpawn(player, heading.yaw);
 		beginRun(player, heading, origin, heading.lateral(origin));
 		return 1;
@@ -177,6 +208,10 @@ public class Farout implements ModInitializer {
 			+ " (default " + Settings.DEFAULT_PATH_WIDTH + ")"));
 		source.sendSystemMessage(Component.literal("  " + Settings.LEEWAY_BLOCKS + ": " + settings.leewayBlocks
 			+ " (default " + Settings.DEFAULT_LEEWAY_BLOCKS + ")"));
+		source.sendSystemMessage(Component.literal("  " + Settings.AIRTIME_HEIGHT + ": " + settings.airtimeHeight
+			+ " (default " + Settings.DEFAULT_AIRTIME_HEIGHT + ")"));
+		source.sendSystemMessage(Component.literal("  " + Settings.AIRTIME_SECONDS + ": " + settings.airtimeSeconds
+			+ " (default " + Settings.DEFAULT_AIRTIME_SECONDS + ")"));
 		return 1;
 	}
 
@@ -246,6 +281,18 @@ public class Farout implements ModInitializer {
 
 	private static int stop(ServerPlayer player) {
 		boolean hadBoard = SplitBoard.clear(player);
+		if (Airtime.cancel(player)) {
+			// Down to the start area rather than leaving them hanging, or falling, wherever they were.
+			leaveHub(player);
+			ServerLevel overworld = player.level().getServer().overworld();
+			BlockPos centre = SpawnHub.centre(overworld);
+			player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
+				Heading.NORTH.yaw, 0f, true);
+			player.resetFallDistance();
+			player.sendOverlayMessage(Component.empty());
+			player.sendSystemMessage(Component.literal("Airtime cancelled."));
+			return 1;
+		}
 		if (leaveHub(player)) {
 			player.sendOverlayMessage(Component.empty());
 			player.sendSystemMessage(Component.literal("Left the start area."));
@@ -301,6 +348,7 @@ public class Farout implements ModInitializer {
 	}
 
 	private static void tick(MinecraftServer server) {
+		Airtime.tick(server);
 		tickHub(server);
 		PowerUps.tick(server);
 
