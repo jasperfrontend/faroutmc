@@ -1,9 +1,12 @@
 name: ci
 
+# The website (site/, deployed with wrangler) doesn't touch the mod, so it skips the gate.
 on:
   push:
     branches: [main]
+    paths-ignore: ['site/**', 'wrangler.jsonc']
   pull_request:
+    paths-ignore: ['site/**', 'wrangler.jsonc']
 
 concurrency:
   group: ci-${{ github.ref }}
