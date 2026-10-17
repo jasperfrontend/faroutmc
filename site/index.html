@@ -257,7 +257,7 @@
     background: var(--panel);
     border: 3px solid var(--line);
   }
-  .faq details[open] { border-color: #2ff3e066; box-shadow: 6px 6px 0 #050a12; }
+  .faq details[open]:not(.closing) { border-color: #2ff3e066; box-shadow: 6px 6px 0 #050a12; }
   .faq summary {
     list-style: none;
     cursor: pointer;
@@ -274,7 +274,7 @@
     font: 700 1.4rem/1 "Chakra Petch", sans-serif;
     color: var(--bg); background: var(--cyan);
   }
-  .faq details[open] summary::after { content: "\2212"; }
+  .faq details[open]:not(.closing) summary::after { content: "\2212"; }
   .faq summary:hover { color: var(--cyan); }
   .faq summary:focus-visible { outline: 3px solid var(--cyan); outline-offset: -3px; }
   .faq .a { padding: 0 20px 18px; color: #c3d2e3; }
@@ -600,5 +600,66 @@
   </div>
 </footer>
 
+<script>
+  // FAQ accordion: one item open at a time, sliding open and shut, and the
+  // opened item scrolled to just below the top of the screen.
+  (() => {
+    const items = [...document.querySelectorAll('.faq details')];
+    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+    const running = new WeakMap();
+
+    const closedHeight = el => el.querySelector('summary').offsetHeight + (el.offsetHeight - el.clientHeight);
+
+    function slide(el, from, to, done) {
+      el.style.overflow = 'hidden';
+      const anim = el.animate({ height: [from + 'px', to + 'px'] },
+        { duration: reduceMotion.matches ? 0 : 260, easing: 'cubic-bezier(.2, .7, .3, 1)' });
+      running.set(el, anim);
+      anim.onfinish = () => {
+        running.delete(el);
+        el.style.overflow = '';
+        if (done) done();
+      };
+    }
+
+    function collapse(el) {
+      const from = el.offsetHeight;
+      running.get(el)?.cancel();
+      el.classList.add('closing');
+      slide(el, from, closedHeight(el), () => {
+        el.open = false;
+        el.classList.remove('closing');
+      });
+    }
+
+    function expand(el) {
+      // Work out where this item ends up once the open ones above it have shut.
+      let shrink = 0;
+      for (const other of items) {
+        if (other === el || !other.open || other.classList.contains('closing')) continue;
+        if (other.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) {
+          shrink += other.offsetHeight - closedHeight(other);
+        }
+        collapse(other);
+      }
+      const top = el.getBoundingClientRect().top + scrollY - shrink - 20;
+
+      const from = el.offsetHeight;
+      running.get(el)?.cancel();
+      el.classList.remove('closing');
+      el.open = true;
+      slide(el, from, el.offsetHeight);
+      scrollTo({ top, behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+    }
+
+    for (const el of items) {
+      el.querySelector('summary').addEventListener('click', e => {
+        e.preventDefault();
+        if (el.open && !el.classList.contains('closing')) collapse(el);
+        else expand(el);
+      });
+    }
+  })();
+</script>
 </body>
 </html>
