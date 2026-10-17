@@ -3,11 +3,13 @@ package nl.jasperfrontend.farout;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 
@@ -24,6 +26,8 @@ import java.util.Locale;
  *     ---+   +---     lanes: HALF wide either side, LANE long
  *        | S |        portal line: the first lane row, at distance HALF + 1
  * </pre>
+ * Where the hub sits in a dip, each lane carries on as a staircase up to the surface, so no direction
+ * starts with digging out.
  */
 final class SpawnHub {
 	private static final int HALF = 3;
@@ -32,6 +36,8 @@ final class SpawnHub {
 	private static final int WALL_HEIGHT = 3;
 	private static final int PORTAL = HALF + 1;
 	private static final int REACH = HALF + LANE;
+	/** Longest exit staircase; terrain still rising after this many steps is left as it is. */
+	private static final int MAX_EXIT_STEPS = 48;
 
 	/** Marks every entity the hub summons, so a rebuild can remove the old ones first. */
 	static final String HUB_TAG = "farout_hub";
@@ -49,9 +55,7 @@ final class SpawnHub {
 	/** The hub centre (feet level) above world spawn. */
 	static BlockPos centre(ServerLevel level) {
 		BlockPos spawn = level.getRespawnData().pos();
-		level.getChunk(spawn); // load it, or the heightmap reads as empty
-		int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawn.getX(), spawn.getZ());
-		return new BlockPos(spawn.getX(), y, spawn.getZ());
+		return new BlockPos(spawn.getX(), surface(level, spawn.getX(), spawn.getZ()), spawn.getZ());
 	}
 
 	/** (Re)builds the hub around the centre, so a damaged hub is repaired on every start. */
@@ -76,8 +80,65 @@ final class SpawnHub {
 					}
 					set(level, c.offset(dx, dy, dz), state);
 				}
+				if (open) {
+					// No overhang left hanging over the hub, whatever the hill above it.
+					int top = surface(level, c.getX() + dx, c.getZ() + dz);
+					for (int y = c.getY() + CLEAR_HEIGHT; y < top; y++) {
+						set(level, new BlockPos(c.getX() + dx, y, c.getZ() + dz), AIR);
+					}
+				}
 			}
 		}
+		for (Heading heading : Heading.values()) {
+			exit(level, c, heading);
+		}
+	}
+
+	/**
+	 * Carries a lane on past its end as stairs cut into the terrain, one block up per row, until the
+	 * ground ahead is no higher than where the stairs got to. Flat or falling ground gets no stairs.
+	 */
+	private static void exit(ServerLevel level, BlockPos c, Heading heading) {
+		BlockState stair = Blocks.STONE_BRICK_STAIRS.defaultBlockState()
+			.setValue(StairBlock.FACING, Direction.fromYRot(heading.yaw));
+		int feet = c.getY();
+		for (int step = 1; step <= MAX_EXIT_STEPS; step++) {
+			int[] surface = new int[2 * HALF + 1];
+			int highest = Integer.MIN_VALUE;
+			for (int side = -HALF; side <= HALF; side++) {
+				BlockPos column = exitColumn(c, heading, step, side);
+				surface[side + HALF] = surface(level, column.getX(), column.getZ());
+				highest = Math.max(highest, surface[side + HALF]);
+			}
+			if (highest <= feet) {
+				return;
+			}
+			for (int side = -HALF; side <= HALF; side++) {
+				BlockPos column = exitColumn(c, heading, step, side);
+				set(level, column.atY(feet), stair);
+				// Clear to the sky, with headroom for whoever stands on this step.
+				int top = Math.max(surface[side + HALF], feet + 3);
+				for (int y = feet + 1; y < top; y++) {
+					set(level, column.atY(y), AIR);
+				}
+			}
+			feet++;
+		}
+	}
+
+	/** The column {@code step} rows past the end of a lane, {@code side} blocks off its middle. */
+	private static BlockPos exitColumn(BlockPos c, Heading heading, int step, int side) {
+		int forward = REACH + step;
+		return new BlockPos(
+			c.getX() + heading.stepX * forward + (heading.stepX == 0 ? side : 0),
+			0,
+			c.getZ() + heading.stepZ * forward + (heading.stepZ == 0 ? side : 0));
+	}
+
+	/** Feet level on top of the ground at this column, ignoring leaves. */
+	private static int surface(ServerLevel level, int x, int z) {
+		level.getChunk(x >> 4, z >> 4); // load it, or the heightmap reads as empty
+		return level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
 	}
 
 	/**
