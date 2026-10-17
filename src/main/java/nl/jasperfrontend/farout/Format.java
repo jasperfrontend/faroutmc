@@ -19,7 +19,7 @@ final class Format {
 			: String.format(Locale.ROOT, "%02d:%02d.%d", m, s, t);
 	}
 
-	/** A signed difference in ticks: -42.1, +1:05.3 (negative = ahead of the personal best). */
+	/** A signed difference in ticks: -0:42.1, +1:05.3 (negative = ahead of the personal best). Always m:ss.t so split columns line up. */
 	static String delta(long ticks) {
 		String sign = ticks < 0 ? "-" : "+";
 		long tenths = Math.abs(ticks) / 2;
@@ -27,9 +27,7 @@ final class Format {
 		long totalSeconds = tenths / 10;
 		long s = totalSeconds % 60;
 		long m = totalSeconds / 60;
-		return m > 0
-			? String.format(Locale.ROOT, "%s%d:%02d.%d", sign, m, s, t)
-			: String.format(Locale.ROOT, "%s%d.%d", sign, s, t);
+		return String.format(Locale.ROOT, "%s%d:%02d.%d", sign, m, s, t);
 	}
 
 	static String blocks(int n) {
