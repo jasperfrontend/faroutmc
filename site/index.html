@@ -127,7 +127,7 @@
     border: 2px solid #2ff3e066;
     background: #08101ccc;
   }
-  .logo { width: min(320px, 72vw); height: auto; display: block; margin: 0 auto 24px; filter: drop-shadow(0 0 28px #2ff3e044); }
+  .logo { width: min(400px, 80vw); height: auto; aspect-ratio: 512 / 192; object-fit: cover; display: block; margin: 0 auto 24px; padding-right: 10px; /* optical centering: the speed lines are light, so the FO looks right-heavy */ filter: drop-shadow(0 0 28px #2ff3e044); }
   .hero h1 {
     font-size: clamp(3.4rem, 12vw, 7.5rem);
     margin-bottom: .25em;
@@ -317,10 +317,6 @@
       <stop offset="1" stop-color="#3ee07f"/>
     </linearGradient>
     <g id="fo" shape-rendering="crispEdges">
-      <g fill="#2357e8" transform="translate(1 1)">
-        <path d="M0 0h6v2h-4v1h3v2h-3v3h-2z"/>
-        <path d="M8 0h4v1h1v6h-1v1h-4v-1h-1v-6h1z M9 2h2v4h-2z" fill-rule="evenodd"/>
-      </g>
       <g fill="url(#fo-fill)">
         <path d="M0 0h6v2h-4v1h3v2h-3v3h-2z"/>
         <path d="M8 0h4v1h1v6h-1v1h-4v-1h-1v-6h1z M9 2h2v4h-2z" fill-rule="evenodd"/>
@@ -337,7 +333,7 @@
 
   <div class="hero-inner wrap">
     <p class="kicker">Minecraft Single-player Mod</p>
-    <svg class="logo" viewBox="-10 -1 25 11" role="img" aria-label="Farout logo"><use href="#fo"/></svg>
+    <img class="logo" src="logo-plain-transparent.svg" alt="Farout logo" width="512" height="512">
     <h1>FAROUT</h1>
     <p class="tagline">Who runs to 10,000 blocks the fastest?</p>
     <p class="sub">Pick north, east, south or west at spawn and run 10k blocks in a straight line. The catch: you have to stay in a 7-wide lane.</p>
@@ -594,7 +590,7 @@
 
 <footer>
   <div class="wrap">
-    <span><svg width="40" height="18" viewBox="-10 -1 25 11" style="vertical-align:middle;margin-right:8px" aria-hidden="true"><use href="#fo"/></svg>Farout, a Minecraft mod for Fabric</span>
+    <span><svg width="46" height="16" viewBox="-10 0 23 8" style="vertical-align:middle;margin-right:8px" aria-hidden="true"><use href="#fo"/></svg>Farout, a Minecraft mod for Fabric</span>
     <span>Created by <a href="https://www.curseforge.com/members/radiojasper/projects">Jasper</a></span>
     <span>Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.</span>
   </div>
