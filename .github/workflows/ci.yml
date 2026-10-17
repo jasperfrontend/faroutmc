@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # build: compiles main and client, remaps the jar.
+      # runGameTest: boots a dedicated server with the mod, which fails on a broken mixin, registry
+      # or datapack JSON, then runs src/gametest and exits non-zero if any test fails.
+      - run: ./gradlew build runGameTest

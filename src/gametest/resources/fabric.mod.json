@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "farout-gametest",
+	"version": "1.0.0",
+	"name": "Farout game tests",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-gametest": [
+			"nl.jasperfrontend.farout.FaroutGameTests"
+		]
+	},
+	"depends": {
+		"farout": "*"
+	}
+}

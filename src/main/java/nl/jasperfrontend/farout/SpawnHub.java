@@ -35,7 +35,7 @@ final class SpawnHub {
 	private static final int CLEAR_HEIGHT = 4;
 	private static final int WALL_HEIGHT = 3;
 	private static final int PORTAL = HALF + 1;
-	private static final int REACH = HALF + LANE;
+	static final int REACH = HALF + LANE;
 	/** Longest exit staircase; terrain still rising after this many steps is left as it is. */
 	private static final int MAX_EXIT_STEPS = 48;
 

@@ -22,6 +22,18 @@ loom {
 	}
 }
 
+// .\gradlew runGameTest: boots a dedicated server with the mod (and src/gametest) loaded, runs every
+// game test there and exits non-zero if one fails. This is the CI gate.
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = "farout-gametest"
+		enableGameTests = true
+		enableClientGameTests = false
+		eula = true
+	}
+}
+
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
