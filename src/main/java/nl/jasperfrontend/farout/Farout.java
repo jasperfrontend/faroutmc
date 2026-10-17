@@ -161,6 +161,7 @@ public class Farout implements ModInitializer {
 		ServerLevel overworld = player.level().getServer().overworld();
 		BlockPos centre = SpawnHub.centre(overworld);
 		SpawnHub.build(overworld, centre);
+		SpawnHub.clearEntities(overworld, centre);
 		SpawnHub.labels(overworld, centre);
 		hubCentre = centre;
 		hubLookedUp = true;

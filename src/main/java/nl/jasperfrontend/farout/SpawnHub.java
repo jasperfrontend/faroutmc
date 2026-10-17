@@ -7,11 +7,14 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.AABB;
 
 import java.util.Locale;
 
@@ -133,6 +136,25 @@ final class SpawnHub {
 			c.getX() + heading.stepX * forward + (heading.stepX == 0 ? side : 0),
 			0,
 			c.getZ() + heading.stepZ * forward + (heading.stepZ == 0 ? side : 0));
+	}
+
+	/**
+	 * Removes every entity but players from the hub and its exit stairs, sky to bedrock: mobs that were
+	 * grazing there before the build, and the seeds and litter it knocked loose. Hub labels go too, so
+	 * call this before {@link #labels}.
+	 */
+	static void clearEntities(ServerLevel level, BlockPos c) {
+		clear(level, c.offset(-REACH, 0, -REACH), c.offset(REACH, 0, REACH));
+		for (Heading heading : Heading.values()) {
+			clear(level, exitColumn(c, heading, 1, -HALF), exitColumn(c, heading, MAX_EXIT_STEPS, HALF));
+		}
+	}
+
+	private static void clear(ServerLevel level, BlockPos a, BlockPos b) {
+		AABB box = AABB.encapsulatingFullBlocks(a.atY(level.getMinY()), b.atY(level.getMaxY()));
+		for (Entity entity : level.getEntitiesOfClass(Entity.class, box, e -> !(e instanceof Player))) {
+			entity.discard();
+		}
 	}
 
 	/** Feet level on top of the ground at this column, ignoring leaves. */

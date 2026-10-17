@@ -9,6 +9,12 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.StairBlock;
@@ -66,6 +72,34 @@ public class FaroutGameTests {
 		SpawnHub.build(level, c);
 		check(helper, level.getBlockState(overhang).isAir(), "overhang above the hub centre was left in place");
 		helper.succeed();
+	}
+
+	/** Mobs and dropped items in the hub and on its exit stairs are removed; the field next to it is left alone. */
+	@GameTest(padding = PADDING)
+	public void hubClearsEntities(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		BlockPos c = terrain(helper);
+		int reach = SpawnHub.REACH;
+		Entity grazing = cow(level, c.offset(2, 0, 2));
+		Entity outside = cow(level, c.offset(reach + 3, 0, reach + 3));
+		ItemEntity seeds = new ItemEntity(level, c.getX() + 0.5, c.getY() + HILL + 1, c.getZ() - reach - HILL + 0.5,
+			new ItemStack(Items.WHEAT_SEEDS));
+		level.addFreshEntity(seeds);
+
+		SpawnHub.build(level, c);
+		SpawnHub.clearEntities(level, c);
+		check(helper, grazing.isRemoved(), "cow in the hub centre was left in place");
+		check(helper, seeds.isRemoved(), "seeds on the north exit stairs were left in place");
+		check(helper, !outside.isRemoved(), "cow outside the hub was removed too");
+		outside.discard();
+		helper.succeed();
+	}
+
+	private static Entity cow(ServerLevel level, BlockPos pos) {
+		Entity cow = EntityType.COW.create(level, EntitySpawnReason.COMMAND);
+		cow.snapTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+		level.addFreshEntity(cow);
+		return cow;
 	}
 
 	/**
