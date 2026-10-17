@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <title>Farout</title>
+  <defs>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2ff3e0"/>
+      <stop offset="1" stop-color="#3ee07f"/>
+    </linearGradient>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2ff3e0"/>
+      <stop offset="1" stop-color="#3ee07f"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="32" height="32" fill="#08101c"/>
+  <path d="M0.5 0.5h31v31h-31z M1.5 1.5v29h29v-29z" fill="url(#frame)" fill-rule="evenodd" opacity=".8"/>
+
+  <g transform="translate(13.75 10.9375) scale(1.125)">
+    <!-- speed lines -->
+    <path d="M-4 1h3v1h-3z M-5 3h4v1h-4z M-6 6h5v1h-5z" fill="#2ff3e0" opacity=".75"/>
+    <path d="M-7 1h2v1h-2z M-8 3h2v1h-2z M-9 6h2v1h-2z" fill="#2ff3e0" opacity=".35"/>
+    <path d="M-10 3h1v1h-1z" fill="#2ff3e0" opacity=".15"/>
+    <!-- blue drop shadow -->
+    <g fill="#2357e8" transform="translate(1 1)">
+      <path d="M0 0h6v2h-4v1h3v2h-3v3h-2z"/>
+      <path d="M8 0h4v1h1v6h-1v1h-4v-1h-1v-6h1z M9 2h2v4h-2z" fill-rule="evenodd"/>
+    </g>
+    <!-- F and O -->
+    <g fill="url(#fill)">
+      <path d="M0 0h6v2h-4v1h3v2h-3v3h-2z"/>
+      <path d="M8 0h4v1h1v6h-1v1h-4v-1h-1v-6h1z M9 2h2v4h-2z" fill-rule="evenodd"/>
+    </g>
+  </g>
+</svg>
