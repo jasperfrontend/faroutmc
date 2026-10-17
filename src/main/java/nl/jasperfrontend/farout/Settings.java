@@ -22,7 +22,7 @@ final class Settings {
 	static final int DEFAULT_PATH_WIDTH = 7;
 	static final int DEFAULT_LEEWAY_BLOCKS = 200;
 	static final int DEFAULT_AIRTIME_HEIGHT = 50;
-	static final int DEFAULT_AIRTIME_SECONDS = 10;
+	static final int DEFAULT_AIRTIME_SECONDS = 30;
 
 	/** Width in blocks of the lane you must stay in, centred on the start line. */
 	final int pathWidth;
