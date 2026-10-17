@@ -42,3 +42,6 @@ replay_*.log
 
 # private working notes
 /docs/private/
+
+# cloudflare
+.wrangler/

@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Farout: the race to 10,000 blocks</title>
+<meta name="description" content="Pick north, east, south or west and run 10,000 blocks as fast as you can, inside a 7-wide lane. A Minecraft mod for Fabric.">
+<meta property="og:title" content="Farout: the race to 10,000 blocks">
+<meta property="og:description" content="Pick a direction. Stay in the lane. Run 10k blocks the fastest.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://faroutmc.com/">
+<meta name="theme-color" content="#08101c">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Jersey+10&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #08101c;
+    --bg-2: #0d1828;
+    --panel: #101e31;
+    --line: #1f3550;
+    --text: #dce8f5;
+    --muted: #8ea3bd;
+    --cyan: #2ff3e0;
+    --green: #3ee07f;
+    --blue: #2357e8;
+    --blue-deep: #16378f;
+    --portal: #a64dff;
+    --danger: #ff5d6c;
+    --px: 4px;
+    --wrap: 1080px;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 500 1.0625rem/1.65 "Chakra Petch", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 {
+    font-family: "Jersey 10", "Chakra Petch", sans-serif;
+    font-weight: 400;
+    line-height: 1;
+    margin: 0 0 .45em;
+    letter-spacing: .03em;
+  }
+  p { margin: 0 0 1em; }
+  a { color: var(--cyan); }
+  code {
+    font: 600 .95em/1 "Chakra Petch", monospace;
+    background: var(--bg);
+    border: 2px solid var(--line);
+    padding: .1em .4em;
+    white-space: nowrap;
+  }
+  .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 16px; }
+
+  /* Stepped "pixel" corners, used on the section badges */
+  .stepped {
+    clip-path: polygon(
+      0 var(--px), var(--px) var(--px), var(--px) 0,
+      calc(100% - var(--px)) 0, calc(100% - var(--px)) var(--px), 100% var(--px),
+      100% calc(100% - var(--px)), calc(100% - var(--px)) calc(100% - var(--px)), calc(100% - var(--px)) 100%,
+      var(--px) 100%, var(--px) calc(100% - var(--px)), 0 calc(100% - var(--px))
+    );
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative;
+    min-height: 100svh;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    isolation: isolate;
+    padding: 64px 0 96px;
+  }
+  .hero::before { /* night sky with block "stars" */
+    content: "";
+    position: absolute; inset: 0;
+    z-index: -3;
+    background:
+      radial-gradient(ellipse 80% 55% at 50% 62%, #12305a 0%, transparent 70%),
+      linear-gradient(var(--bg) 0%, #0b1a2e 60%, var(--bg) 100%);
+  }
+  .ground {
+    position: absolute;
+    left: 50%; bottom: 0;
+    width: 260vmax; height: 90vh;
+    transform: translateX(-50%) perspective(500px) rotateX(58deg);
+    transform-origin: 50% 100%;
+    z-index: -2;
+    --cell: 48px;
+    /* Lane edges sit 3.5 blocks either side of centre; the grid tiles are
+       centred too, so the edges land exactly on block lines. */
+    background:
+      linear-gradient(90deg,
+        transparent calc(50% - 3.5 * var(--cell) - 2px), #2ff3e0aa calc(50% - 3.5 * var(--cell) - 2px),
+        #2ff3e0aa calc(50% - 3.5 * var(--cell) + 3px), #2ff3e012 calc(50% - 3.5 * var(--cell) + 3px),
+        #2ff3e012 calc(50% + 3.5 * var(--cell) - 3px), #2ff3e0aa calc(50% + 3.5 * var(--cell) - 3px),
+        #2ff3e0aa calc(50% + 3.5 * var(--cell) + 2px), transparent calc(50% + 3.5 * var(--cell) + 2px)),
+      linear-gradient(0deg, #1f3550aa 0 2px, transparent 2px),
+      linear-gradient(90deg, #1f3550aa 0 2px, transparent 2px);
+    background-size: 100% 100%, var(--cell) var(--cell), var(--cell) var(--cell);
+    background-position: 0 0, 0 0, calc(50% - 1px) 0;
+    animation: run .45s linear infinite;
+    -webkit-mask-image: linear-gradient(to top, #000 45%, transparent 100%);
+            mask-image: linear-gradient(to top, #000 45%, transparent 100%);
+  }
+  @keyframes run {
+    to { background-position: 0 0, 0 48px, calc(50% - 1px) 0; }
+  }
+
+  .hero-inner { text-align: center; max-width: 760px; }
+  .kicker {
+    display: inline-block;
+    margin: 0 0 28px;
+    padding: 6px 14px 7px;
+    font: 400 1.35rem/1 "Jersey 10", sans-serif;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--cyan);
+    border: 2px solid #2ff3e066;
+    background: #08101ccc;
+  }
+  .logo { width: min(320px, 72vw); height: auto; display: block; margin: 0 auto 24px; filter: drop-shadow(0 0 28px #2ff3e044); }
+  .hero h1 {
+    font-size: clamp(3.4rem, 12vw, 7.5rem);
+    margin-bottom: .25em;
+    background: linear-gradient(180deg, var(--cyan), var(--green));
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent;
+    text-shadow: none;
+    filter: drop-shadow(4px 4px 0 var(--blue-deep));
+  }
+  .tagline {
+    font-size: clamp(1.15rem, 2.6vw, 1.45rem);
+    font-weight: 600;
+    margin: 0 auto 8px;
+  }
+  .sub { color: var(--muted); margin: 0 auto 36px; max-width: 34em; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 14px;
+    padding: 18px 30px 22px;
+    font: 400 1.6rem/1 "Jersey 10", "Chakra Petch", sans-serif; letter-spacing: .03em;
+    color: #04121a;
+    text-decoration: none;
+    background: linear-gradient(180deg, var(--cyan), var(--green));
+    box-shadow: inset 0 -6px 0 #1b9e7a, inset 0 4px 0 #b6fff5;
+    transition: transform .08s steps(2), filter .15s;
+  }
+  .btn:hover { filter: brightness(1.08); transform: translateY(-2px); }
+  .btn:active { transform: translateY(3px); box-shadow: inset 0 -2px 0 #1b9e7a, inset 0 4px 0 #b6fff5; }
+  .btn:focus-visible { outline: 4px solid #fff; outline-offset: 4px; }
+  .btn svg { width: 22px; height: 22px; }
+  .btn-wrap { display: inline-block; padding: 6px; background: var(--blue-deep); }
+  .req { margin-top: 18px; font-size: .95rem; color: var(--muted); }
+
+  .stats {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+    margin: 40px 0 0; padding: 0; list-style: none;
+  }
+  .stats li {
+    background: #0d1828cc;
+    border: 2px solid var(--line);
+    padding: 6px 14px;
+    font-size: .95rem;
+    color: var(--muted);
+  }
+  .stats b { color: var(--text); font-weight: 700; }
+
+  .scroll-hint {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    width: 20px; height: 20px;
+    color: var(--muted);
+    animation: bob 1.4s steps(2) infinite;
+  }
+  @keyframes bob { 50% { transform: translate(-50%, 6px); } }
+
+  /* ---------- Sections ---------- */
+  section { padding: 88px 0; }
+  section:nth-of-type(even) { background: var(--bg-2); }
+  .eyebrow {
+    display: inline-block;
+    font: 400 1.05rem/1 "Jersey 10", sans-serif;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--bg); background: var(--cyan);
+    padding: 6px 10px 7px;
+    margin-bottom: 18px;
+  }
+  .eyebrow.stepped { --px: 3px; }
+  h2 { font-size: clamp(2.4rem, 5.5vw, 3.6rem); }
+  .lead { color: var(--muted); max-width: 40em; font-size: 1.1rem; }
+
+  .grid { display: grid; gap: 22px; margin-top: 36px; }
+  .grid-3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .grid-4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+  .card {
+    display: flex; flex-direction: column; align-items: flex-start;
+    background: var(--panel);
+    border: 3px solid var(--line);
+    box-shadow: 6px 6px 0 #050a12;
+    padding: 24px;
+  }
+  .card h3 { font-size: 1.9rem; }
+  .card p:last-child { margin-bottom: 0; }
+  .card .num {
+    display: inline-grid; place-items: center;
+    width: 40px; height: 40px;
+    margin-bottom: 14px;
+    font: 400 1.7rem/1 "Jersey 10", sans-serif;
+    color: var(--bg); background: var(--green);
+    box-shadow: inset -4px -4px 0 #1b9e7a;
+  }
+  .card .icon {
+    width: 64px; height: 64px; margin-bottom: 16px;
+    padding: 8px;
+    background: var(--bg);
+    border: 2px solid var(--line);
+    color: var(--cyan);
+  }
+  .tag {
+    display: inline-block;
+    font-size: .85rem; font-weight: 600;
+    color: var(--muted);
+    border-top: 2px dashed var(--line);
+    padding-top: 10px; margin-top: auto;
+    align-self: stretch;
+  }
+
+  /* Lane diagram */
+  .lane-row { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .lane-fig { background: var(--panel); border: 3px solid var(--line); box-shadow: 6px 6px 0 #050a12; padding: 16px; }
+  .lane-fig svg { display: block; width: 100%; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: .9rem; color: var(--muted); }
+  .legend i { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; }
+
+  .ends { list-style: none; padding: 0; margin: 36px 0 0; display: grid; gap: 12px; }
+  .ends li {
+    display: grid; grid-template-columns: 150px 1fr; gap: 16px; align-items: baseline;
+    background: var(--panel); border: 3px solid var(--line);
+    padding: 14px 20px;
+  }
+  .ends .k { font: 400 1.6rem/1 "Jersey 10", sans-serif; letter-spacing: .03em; }
+  .ends .win { color: var(--green); }
+  .ends .fail { color: var(--danger); }
+  .ends .cancel { color: var(--muted); }
+
+  .faq { margin-top: 36px; display: grid; gap: 10px; max-width: 860px; }
+  .faq details {
+    background: var(--panel);
+    border: 3px solid var(--line);
+  }
+  .faq details[open] { border-color: #2ff3e066; box-shadow: 6px 6px 0 #050a12; }
+  .faq summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px 20px;
+    font-weight: 600; font-size: 1.1rem;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after {
+    content: "+";
+    flex: none;
+    display: grid; place-items: center;
+    width: 28px; height: 28px;
+    font: 700 1.4rem/1 "Chakra Petch", sans-serif;
+    color: var(--bg); background: var(--cyan);
+  }
+  .faq details[open] summary::after { content: "\2212"; }
+  .faq summary:hover { color: var(--cyan); }
+  .faq summary:focus-visible { outline: 3px solid var(--cyan); outline-offset: -3px; }
+  .faq .a { padding: 0 20px 18px; color: #c3d2e3; }
+  .faq .a p:last-child, .faq .a ul:last-child { margin-bottom: 0; }
+  .faq ul { margin: 0 0 1em; padding-left: 1.2em; }
+  .faq li { margin-bottom: .35em; }
+
+  .cta { text-align: center; }
+  .cta h2 { margin-bottom: .3em; }
+  .cta .lead { margin: 0 auto 32px; }
+
+  footer {
+    border-top: 3px solid var(--line);
+    padding: 28px 0 36px;
+    color: var(--muted);
+    font-size: .9rem;
+  }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+  footer img { width: 40px; height: 40px; vertical-align: middle; margin-right: 10px; }
+
+  @media (max-width: 760px) {
+    section { padding: 64px 0; }
+    .lane-row { grid-template-columns: 1fr; gap: 28px; }
+    .ends li { grid-template-columns: 1fr; gap: 2px; }
+    .btn { font-size: 1.1rem; padding: 16px 22px 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Pixel wordmark, reused in the hero and footer -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="fo-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2ff3e0"/>
+      <stop offset="1" stop-color="#3ee07f"/>
+    </linearGradient>
+    <g id="fo" shape-rendering="crispEdges">
+      <g fill="#2357e8" transform="translate(1 1)">
+        <path d="M0 0h6v2h-4v1h3v2h-3v3h-2z"/>
+        <path d="M8 0h4v1h1v6h-1v1h-4v-1h-1v-6h1z M9 2h2v4h-2z" fill-rule="evenodd"/>
+      </g>
+      <g fill="url(#fo-fill)">
+        <path d="M0 0h6v2h-4v1h3v2h-3v3h-2z"/>
+        <path d="M8 0h4v1h1v6h-1v1h-4v-1h-1v-6h1z M9 2h2v4h-2z" fill-rule="evenodd"/>
+      </g>
+      <path d="M-4 1h3v1h-3z M-5 3h4v1h-4z M-6 6h5v1h-5z" fill="#2ff3e0" opacity=".75"/>
+      <path d="M-7 1h2v1h-2z M-8 3h2v1h-2z M-9 6h2v1h-2z" fill="#2ff3e0" opacity=".35"/>
+      <path d="M-10 3h1v1h-1z" fill="#2ff3e0" opacity=".15"/>
+    </g>
+  </defs>
+</svg>
+
+<header class="hero">
+  <div class="ground" aria-hidden="true"></div>
+
+  <div class="hero-inner wrap">
+    <p class="kicker">Minecraft Single-player Mod</p>
+    <svg class="logo" viewBox="-10 -1 25 11" role="img" aria-label="Farout logo"><use href="#fo"/></svg>
+    <h1>FAROUT</h1>
+    <p class="tagline">Who runs to 10,000 blocks the fastest?</p>
+    <p class="sub">Pick north, east, south or west at spawn and run 10k blocks in a straight line. The catch: you have to stay in a 7-wide lane.</p>
+
+    <span class="btn-wrap">
+      <a class="btn" href="https://www.curseforge.com/minecraft/mc-mods/farout">
+        <svg viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h2v4h2v1h-1v1h-1v1h-2v-1h-1v-1h-1v-1h2z M0 7h8v1h-8z"/></svg>
+        Get it on CurseForge
+      </a>
+    </span>
+    <p class="req">Minecraft 26.1.2 · Fabric Loader + Fabric API · Singleplayer</p>
+
+    <ul class="stats">
+      <li><b>10,000</b> blocks</li>
+      <li><b>7</b>-wide lane</li>
+      <li><b>200</b> blocks of leeway</li>
+      <li><b>4</b> directions, 4 personal bests</li>
+    </ul>
+  </div>
+
+  <svg class="scroll-hint" viewBox="0 0 5 5" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 1h1v1h1v1h1v-1h1v-1h1v1h-1v1h-1v1h-1v-1h-1v-1h-1z"/></svg>
+</header>
+
+<main>
+  <section id="how">
+    <div class="wrap">
+      <span class="eyebrow stepped">How a run works</span>
+      <h2>Every run starts like a brand-new world</h2>
+      <p class="lead">Empty inventory, full health, dawn and clear skies. Farout times you, shows a split every 1,000 blocks and keeps a personal best for each direction.</p>
+
+      <div class="grid grid-3">
+        <div class="card">
+          <span class="num">1</span>
+          <h3>Airtime</h3>
+          <p>Type <code>/farout start</code>. You're lifted 50 blocks above spawn with the world on pause. You get 30 seconds to pick the direction that looks fastest. Zoom mods welcome.</p>
+        </div>
+        <div class="card">
+          <span class="num">2</span>
+          <h3>Cross the line</h3>
+          <p>You drop into the start area: a lane for each direction, each with a purple portal line. The clock starts the moment you cross one. Hillside in the way? Farout cuts you a staircase.</p>
+        </div>
+        <div class="card">
+          <span class="num">3</span>
+          <h3>Run 10k</h3>
+          <p>Straight line, as fast as you can. Reach 10,000 blocks and it's <strong>FAROUT!</strong> Your time, and a new personal best if you beat the old one.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="lane">
+    <div class="wrap lane-row">
+      <div>
+        <span class="eyebrow stepped">The catch</span>
+        <h2>Stay in the lane</h2>
+        <p class="lead">Your lane is 7 blocks wide, lined up with where you started. Particles mark its edges ahead of you.</p>
+        <p>Step outside and every block you travel costs leeway. You get 200 per run. Black fog closes in the further you stray, and a low note sounds for every block you burn. Use it all up and lightning strikes. Run over.</p>
+        <p>So when the lane goes through a mountain, you go through the mountain. Ocean ahead? Better bring a boat.</p>
+      </div>
+      <figure class="lane-fig" style="margin:0">
+        <svg viewBox="0 0 220 160" shape-rendering="crispEdges" role="img" aria-label="Top-down view of a 7-block-wide lane running north, with a player stepping outside it into the leeway zone">
+          <defs>
+            <pattern id="blk" width="10" height="10" patternUnits="userSpaceOnUse">
+              <rect width="10" height="10" fill="#0d1828"/>
+              <rect width="9" height="9" fill="#13243a"/>
+            </pattern>
+            <pattern id="blk-lane" width="10" height="10" patternUnits="userSpaceOnUse">
+              <rect width="10" height="10" fill="#0f2b33"/>
+              <rect width="9" height="9" fill="#14414a"/>
+            </pattern>
+          </defs>
+          <rect width="220" height="160" fill="url(#blk)"/>
+          <!-- lane: 7 blocks wide -->
+          <rect x="75" y="0" width="70" height="160" fill="url(#blk-lane)"/>
+          <!-- edge particles -->
+          <g fill="#2ff3e0">
+            <rect x="74" y="4" width="2" height="2"/><rect x="74" y="24" width="2" height="2"/><rect x="74" y="44" width="2" height="2"/><rect x="74" y="64" width="2" height="2"/><rect x="74" y="84" width="2" height="2"/><rect x="74" y="104" width="2" height="2"/>
+            <rect x="144" y="4" width="2" height="2"/><rect x="144" y="24" width="2" height="2"/><rect x="144" y="44" width="2" height="2"/><rect x="144" y="64" width="2" height="2"/><rect x="144" y="84" width="2" height="2"/><rect x="144" y="104" width="2" height="2"/>
+          </g>
+          <!-- portal line -->
+          <rect x="75" y="140" width="70" height="4" fill="#a64dff"/>
+          <!-- path taken: in lane, then out into leeway -->
+          <g fill="#3ee07f">
+            <rect x="105" y="125" width="10" height="10"/><rect x="105" y="115" width="10" height="10" opacity=".7"/>
+            <rect x="105" y="105" width="10" height="10" opacity=".55"/><rect x="115" y="95" width="10" height="10" opacity=".45"/>
+            <rect x="125" y="85" width="10" height="10" opacity=".4"/>
+          </g>
+          <g fill="#ff5d6c">
+            <rect x="145" y="75" width="10" height="10" opacity=".55"/><rect x="155" y="65" width="10" height="10" opacity=".7"/>
+          </g>
+          <!-- player -->
+          <rect x="165" y="55" width="10" height="10" fill="#ff5d6c"/>
+          <rect x="167" y="57" width="2" height="2" fill="#08101c"/><rect x="171" y="57" width="2" height="2" fill="#08101c"/>
+          <!-- width marker -->
+          <g fill="#8ea3bd">
+            <rect x="75" y="150" width="70" height="1"/><rect x="75" y="147" width="1" height="7"/><rect x="144" y="147" width="1" height="7"/>
+          </g>
+        </svg>
+        <figcaption class="legend">
+          <span><i style="background:#14414a"></i>Lane, 7 blocks</span>
+          <span><i style="background:#2ff3e0"></i>Edge particles</span>
+          <span><i style="background:#ff5d6c"></i>Burning leeway</span>
+          <span><i style="background:#a64dff"></i>Portal line</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="power-ups">
+    <div class="wrap">
+      <span class="eyebrow stepped">Power-ups</span>
+      <h2>Craft your way through</h2>
+      <p class="lead">Four power-ups you can craft along the way. Each lasts 30 seconds from the first time you use it, then it's gone. Their recipes float in the corners of the start area, and they're in your recipe book too.</p>
+
+      <div class="grid grid-4">
+        <div class="card">
+          <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M2 0h3v5h2v1h1v2h-7v-2h1z"/><path fill="#2357e8" d="M2 1h3v1h-3z"/></svg>
+          <h3>Mountain Hop Boots</h3>
+          <p>Jump Boost X and no fall damage.</p>
+          <span class="tag">Starts when you put them on</span>
+        </div>
+        <div class="card">
+          <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M1 0h5v1h1v1h1v4h-1v-3h-1v-1h-1v-1h-4z"/><path fill="#a0773c" d="M4 3h1v1h-1z M3 4h1v1h-1z M2 5h1v1h-1z M1 6h1v1h-1z M0 7h1v1h-1z"/></svg>
+          <h3>Power Drill</h3>
+          <p>A pickaxe with max Haste that mines 3x3.</p>
+          <span class="tag">Starts on the first block you mine</span>
+        </div>
+        <div class="card">
+          <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M1 0h6v4h-1v2h-1v1h-2v-1h-1v-2h-1z"/><path fill="#2357e8" d="M3 1h2v4h-2z"/></svg>
+          <h3>Can't Hurt Me</h3>
+          <p>A shield that makes you immune to everything except falling.</p>
+          <span class="tag">Starts when you raise it</span>
+        </div>
+        <div class="card">
+          <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="#8ea3bd" d="M2 0h1v1h-1z M4 0h1v1h-1z"/><path fill="currentColor" d="M0 2h6v6h-6z M6 3h2v3h-2v-1h1v-1h-1z"/><path fill="#6b4226" d="M1 3h4v1h-4z"/></svg>
+          <h3>Morning Coffee</h3>
+          <p>Speed III. Brewed from a bed, only in the minute after you sleep through a night. Right-click to drink.</p>
+          <span class="tag">Starts when you drink it</span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:22px">
+        <h3>Boats</h3>
+        <p>Press <code>I</code> while steering a boat to turn it to the nearest of north, east, south or west. Works on water, ice and land. Rebind it under Options › Controls › Key Binds › Farout.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="ends">
+    <div class="wrap">
+      <span class="eyebrow stepped">Finish line</span>
+      <h2>How a run ends</h2>
+      <ul class="ends">
+        <li><span class="k win">FAROUT!</span><span>You reach 10,000 blocks. You get your time, and a new personal best if you beat the old one.</span></li>
+        <li><span class="k fail">Failed</span><span>You die, or you run out of leeway.</span></li>
+        <li><span class="k cancel">Cancelled</span><span>You leave the Overworld. No Nether shortcuts.</span></li>
+        <li><span class="k cancel">Given up</span><span><code>/farout stop</code> clears your inventory and takes you back to the start area.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <span class="eyebrow stepped">FAQ</span>
+      <h2>Questions, answered</h2>
+
+      <div class="faq">
+        <details>
+          <summary>So you just... run?</summary>
+          <div class="a"><p>Yes, you just run 10,000 blocks in one direction. Meanwhile the world is trying to kill you in every way Minecraft is capable of, especially at night, and you just have to keep moving forward.</p></div>
+        </details>
+        <details>
+          <summary>Is hunger, sleep or fall damage disabled?</summary>
+          <div class="a"><p>No, this is as vanilla as it gets. It's you against Minecraft's elements.</p></div>
+        </details>
+        <details>
+          <summary>What happens when I die?</summary>
+          <div class="a"><p>Then the run is over and you lose. Type <code>/farout start</code> to start again.</p></div>
+        </details>
+        <details>
+          <summary>What are the commands I can use?</summary>
+          <div class="a"><ul>
+              <li><code>/farout start</code> lifts you above the start area for Airtime, then drops you in to pick a lane.</li>
+              <li><code>/farout start north</code> (or <code>east</code>, <code>south</code>, <code>west</code>) skips the start area and starts the run straight from spawn.</li>
+              <li><code>/farout stop</code> gives up the run, clears your inventory and takes you back to the start area.</li>
+              <li><code>/farout settings</code> shows the current settings, and <code>/farout settings &lt;name&gt; &lt;value&gt;</code> changes one. Changes apply from your next run.</li>
+            </ul></div>
+        </details>
+        <details>
+          <summary>Will the mod work with commands disabled?</summary>
+          <div class="a"><p>Yes. <code>/farout</code> works even in a world without cheats, so you don't need to turn on Allow Commands.</p></div>
+        </details>
+        <details>
+          <summary>What other settings does this mod have?</summary>
+          <div class="a"><p>Just one key bind: press <code>I</code> while steering a boat to turn it to the nearest of north, east, south or west. It works on water, ice and land. Rebind it under Options › Controls › Key Binds › Farout.</p></div>
+        </details>
+        <details>
+          <summary>Can I cheat?</summary>
+          <div class="a"><p>Yes. You will literally be cheating on yourself, but if that makes you feel good then please: cheat.</p></div>
+        </details>
+        <details>
+          <summary>Is there a leaderboard?</summary>
+          <div class="a"><p>Not right now. Before Farout can become a speedrunning thing, there's a ton I'd need to create, harden and improve first. That takes time, feedback and motivation, and I have none of that right now. <em>— Jasper</em></p></div>
+        </details>
+        <details>
+          <summary>Can I play Farout with a friend over LAN?</summary>
+          <div class="a"><p>No. Farout is made for singleplayer. Airtime pauses the whole world for everyone, and personal bests are saved on the host's computer per direction, not per player. Multiplayer might come later.</p></div>
+        </details>
+        <details>
+          <summary>What's the lane?</summary>
+          <div class="a"><p>The lane is a strip 7 blocks wide, lined up with where you started, running all the way to 10,000 blocks. Particles mark its edges ahead of you. You have to stay inside it, so when the lane goes through a mountain, you go through the mountain.</p></div>
+        </details>
+        <details>
+          <summary>Why can't I see outside the lane?</summary>
+          <div class="a"><p>Because you're supposed to stay inside it! You get 200 blocks of leeway per run: every block you travel outside the lane uses one up. While you're out, black fog closes in the further you stray, and a low note sounds for every block you burn. Use all 200 and you're struck by lightning. Run over.</p></div>
+        </details>
+        <details>
+          <summary>Can I contribute?</summary>
+          <div class="a"><p>Yes! The <a href="https://github.com/jasperfrontend/faroutmc">GitHub repo</a> is open to contributions, forks, pull requests, you name it. You can also drop a comment on the <a href="https://www.curseforge.com/minecraft/mc-mods/farout">CurseForge page</a>.</p></div>
+        </details>
+        <details>
+          <summary>Is Farout also on Modrinth or anywhere else?</summary>
+          <div class="a"><p>Currently Farout is only available on <a href="https://www.curseforge.com/minecraft/mc-mods/farout">CurseForge</a>.</p></div>
+        </details>
+        <details>
+          <summary>Is Farout free?</summary>
+          <div class="a"><p>Yes. It's a free mod and it will forever be free.</p></div>
+        </details>
+        <details>
+          <summary>Is there any tracking, telemetry, statistics harvesting or AI scanning?</summary>
+          <div class="a"><p>No, absolutely not. Farout is a singleplayer mod without a backend. All its data stays in your own Minecraft instance.</p></div>
+        </details>
+        <details>
+          <summary>My question still isn't answered.</summary>
+          <div class="a"><p>Drop a comment on the <a href="https://www.curseforge.com/minecraft/mc-mods/farout">CurseForge project page</a> or open an issue on <a href="https://github.com/jasperfrontend/faroutmc/issues">GitHub</a>.</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="wrap">
+      <h2>Pick a direction.</h2>
+      <p class="lead">North, east, south and west are four separate races. How fast is yours?</p>
+      <span class="btn-wrap">
+        <a class="btn" href="https://www.curseforge.com/minecraft/mc-mods/farout">
+          <svg viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h2v4h2v1h-1v1h-1v1h-2v-1h-1v-1h-1v-1h2z M0 7h8v1h-8z"/></svg>
+          Get it on CurseForge
+        </a>
+      </span>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><svg width="40" height="18" viewBox="-10 -1 25 11" style="vertical-align:middle;margin-right:8px" aria-hidden="true"><use href="#fo"/></svg>Farout, a Minecraft mod for Fabric</span>
+    <span>Created by <a href="https://www.curseforge.com/members/radiojasper/projects">Jasper</a></span>
+    <span>Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.</span>
+  </div>
+</footer>
+
+</body>
+</html>
