@@ -5,6 +5,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityLevelChangeEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -29,7 +30,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.DamageTypeTags;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -49,15 +50,14 @@ public class Farout implements ModInitializer {
 	public static final int TARGET = Integer.getInteger("farout.target", 10_000);
 	public static final int SPLIT_INTERVAL = Integer.getInteger("farout.split", 1_000);
 	private static final int ACTION_BAR_INTERVAL_TICKS = 10;
-	/** How long you get to take in the finish before you're taken back to the start area. */
+	/** How long you get to take in the finish before you're taken home. */
 	private static final int FINISH_GRACE_TICKS = 100;
 
 	private static final Map<UUID, Run> RUNS = new HashMap<>();
 	/** Players standing in the start area, picking a direction; value is the hub centre. */
 	private static final Map<UUID, BlockPos> IN_HUB = new HashMap<>();
-	/** Centre of the built hub, so its portals work without a command (e.g. after dying); null if none. */
-	private static BlockPos hubCentre;
-	private static boolean hubLookedUp;
+	/** The hub centre in each player's session world, from /farout start until their run begins. */
+	private static final Map<UUID, BlockPos> HUBS = new HashMap<>();
 
 	@Override
 	public void onInitialize() {
@@ -68,6 +68,7 @@ public class Farout implements ModInitializer {
 		Registry.register(BuiltInRegistries.RECIPE_SERIALIZER, Identifier.fromNamespaceAndPath(MOD_ID, "power_up"),
 			PowerUpRecipe.SERIALIZER);
 		PowerUps.register();
+		Stash.register();
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			LiteralArgumentBuilder<CommandSourceStack> start = Commands.literal("start")
@@ -99,8 +100,6 @@ public class Farout implements ModInitializer {
 
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof ServerPlayer player) {
-				Airtime.cancel(player);
-				leaveHub(player);
 				PowerUps.clear(player);
 				Run run = endRun(player);
 				if (run != null) {
@@ -109,41 +108,68 @@ public class Farout implements ModInitializer {
 						"Run failed at " + Format.blocks(progress) + " blocks (" + Format.time(run.ticks) + ")"
 					).withStyle(ChatFormatting.RED));
 				}
+				// Whatever they died with stays in the run's world; AFTER_RESPAWN takes them home.
+				endSession(player);
+			}
+		});
+		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+			// Respawning in the run's world (a bed there) is handled by RunWorlds, which sends them home from it.
+			if (Stash.has(newPlayer) && !RunWorlds.isRunWorld(newPlayer.level().dimension())) {
+				sendHome(newPlayer);
 			}
 		});
 
 		ServerEntityLevelChangeEvents.AFTER_PLAYER_CHANGE_LEVEL.register((player, from, to) -> {
-			if (to.dimension() != Level.OVERWORLD) {
-				Airtime.cancel(player);
-				leaveHub(player);
+			// Moving into a run world is how every session starts; only leaving one ends it.
+			if (!RunWorlds.isRunWorld(from.dimension()) || RunWorlds.isRunWorld(to.dimension())) {
+				return;
 			}
-			// beginRun moves the player into the run world before the run exists, so that move doesn't count.
-			Run run = RUNS.get(player.getUUID());
-			if (run != null && to != run.level && endRun(player) != null) {
+			if (endRun(player) != null) {
 				player.sendSystemMessage(Component.literal("Run cancelled: left the run's world")
 					.withStyle(ChatFormatting.RED));
 			}
+			endSession(player);
+			// Farout's own way home takes the stash before it moves you; anything else (a /tp, another mod)
+			// still gets you your own things back.
+			if (Stash.has(player)) {
+				sendHome(player);
+			}
 		});
 
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-			PowerUps.unlockRecipes(handler.getPlayer()));
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-			PowerUps.clear(handler.getPlayer());
-			RUNS.remove(handler.getPlayer().getUUID());
-			// Saved after this, so they log back in at the start area rather than in a world that's gone.
-			if (RunWorlds.isRunWorld(handler.getPlayer().level().dimension())) {
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			PowerUps.unlockRecipes(handler.getPlayer());
+			// Still stashed: the server went down mid-session without saying goodbye, and the run world with it.
+			if (Stash.has(handler.getPlayer())) {
 				sendHome(handler.getPlayer());
 			}
-			RunWorlds.close(handler.getPlayer().getUUID(), 0);
-			IN_HUB.remove(handler.getPlayer().getUUID());
-			Airtime.forget(server, handler.getPlayer().getUUID());
-			SplitBoard.forget(handler.getPlayer().getUUID());
+		});
+		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+			ServerPlayer player = handler.getPlayer();
+			PowerUps.clear(player);
+			RUNS.remove(player.getUUID());
+			Airtime.cancel(player);
+			IN_HUB.remove(player.getUUID());
+			HUBS.remove(player.getUUID());
+			RunWorlds.close(player.getUUID(), 0);
+			// Saved after this, so they log back in where they started, with their own things.
+			if (Stash.has(player) || RunWorlds.isRunWorld(player.level().dimension())) {
+				sendHome(player);
+			}
+			SplitBoard.forget(player.getUUID());
+		});
+		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+			// Before the players are saved and Fantasy deletes the run worlds: everyone home, with their own things.
+			for (ServerPlayer player : List.copyOf(server.getPlayerList().getPlayers())) {
+				if (Stash.has(player) || RunWorlds.isRunWorld(player.level().dimension())) {
+					Airtime.cancel(player);
+					sendHome(player);
+				}
+			}
 		});
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
 			RUNS.clear();
 			IN_HUB.clear();
-			hubCentre = null;
-			hubLookedUp = false;
+			HUBS.clear();
 			Airtime.forgetAll();
 			SplitBoard.forgetAll();
 			PowerUps.clearAll();
@@ -152,8 +178,9 @@ public class Farout implements ModInitializer {
 	}
 
 	/**
-	 * /farout start: build the start area at spawn and drop the player into its centre to pick a lane, after
-	 * a few seconds of airtime high above it to scout the directions.
+	 * /farout start: stash the player, open a fresh copy of the world with the start area at its spawn, and
+	 * drop them into its centre to pick a lane, after a few seconds of airtime high above it to scout the
+	 * directions. Nothing of this touches the player's own world.
 	 */
 	private static int enterHub(ServerPlayer player) {
 		if (RUNS.containsKey(player.getUUID())) {
@@ -162,19 +189,22 @@ public class Farout implements ModInitializer {
 			return 0;
 		}
 
-		ServerLevel overworld = player.level().getServer().overworld();
-		BlockPos centre = SpawnHub.centre(overworld);
-		SpawnHub.build(overworld, centre);
-		SpawnHub.clearEntities(overworld, centre);
-		SpawnHub.labels(overworld, centre);
-		hubCentre = centre;
-		hubLookedUp = true;
-		player.getInventory().clearContent();
+		Airtime.cancel(player);
+		leaveHub(player);
+		// Starting again from the hub or right after a finish keeps the stash from the first start.
+		Stash.save(player);
+		ServerLevel level = RunWorlds.open(player);
+		BlockPos centre = SpawnHub.centre(level, level.getServer().overworld().getRespawnData().pos());
+		SpawnHub.build(level, centre);
+		SpawnHub.clearEntities(level, centre);
+		SpawnHub.labels(level, centre);
+		HUBS.put(player.getUUID(), centre);
+		resetToFreshSpawn(player);
 		SplitBoard.clear(player);
 
 		Settings settings = Settings.load();
 		if (settings.airtimeHeight == 0) {
-			player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
+			player.teleportTo(level, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
 				Heading.NORTH.yaw, 0f, true);
 			IN_HUB.put(player.getUUID(), centre);
 			sendRunState(player, true);
@@ -182,8 +212,7 @@ public class Farout implements ModInitializer {
 			return 1;
 		}
 		// Up there they're not in the hub yet; tickHub takes them in once they land in the centre.
-		leaveHub(player);
-		Airtime.start(player, centre, settings.airtimeHeight, settings.airtimeSeconds);
+		Airtime.start(player, level, centre, settings.airtimeHeight, settings.airtimeSeconds);
 		player.sendSystemMessage(Component.literal("Airtime! ").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)
 			.append(Component.literal("You've got " + settings.airtimeSeconds + " seconds up here with the world on pause. "
 				+ "Look around and pick the direction you want to go, then drop into the start area.")
@@ -199,8 +228,9 @@ public class Farout implements ModInitializer {
 			return 0;
 		}
 
-		IN_HUB.remove(player.getUUID());
 		Airtime.cancel(player);
+		leaveHub(player);
+		Stash.save(player);
 		BlockPos origin = teleportToSpawn(player, RunWorlds.open(player), heading.yaw);
 		beginRun(player, heading, origin, heading.lateral(origin));
 		return 1;
@@ -243,9 +273,11 @@ public class Farout implements ModInitializer {
 	/** laneCentre: the sideways block coordinate the lane is centred on. */
 	private static void beginRun(ServerPlayer player, Heading heading, BlockPos origin, int laneCentre) {
 		// Start like a brand-new world: a freshly spawned player, clear skies, at the time a new world begins.
+		// The time is the run world's own clock; weather is one for the whole server, so that clears at home too.
+		HUBS.remove(player.getUUID());
 		resetToFreshSpawn(player);
 		MinecraftServer server = player.level().getServer();
-		CommandSourceStack source = server.createCommandSourceStack().withSuppressedOutput();
+		CommandSourceStack source = server.createCommandSourceStack().withLevel(player.level()).withSuppressedOutput();
 		server.getCommands().performPrefixedCommand(source, "time set 0");
 		server.getCommands().performPrefixedCommand(source, "weather clear");
 
@@ -291,49 +323,43 @@ public class Farout implements ModInitializer {
 		return true;
 	}
 
+	/** /farout stop: gives up whatever part of the session they're in (Airtime, hub, run, finish) and goes home. */
 	private static int stop(ServerPlayer player) {
 		boolean hadBoard = SplitBoard.clear(player);
-		if (Airtime.cancel(player)) {
-			// Down to the start area rather than leaving them hanging, or falling, wherever they were.
-			leaveHub(player);
-			sendHome(player);
-			player.resetFallDistance();
-			player.sendOverlayMessage(Component.empty());
-			player.sendSystemMessage(Component.literal("Airtime cancelled."));
-			return 1;
-		}
-		if (leaveHub(player)) {
-			player.sendOverlayMessage(Component.empty());
-			player.sendSystemMessage(Component.literal("Left the start area."));
-			return 1;
-		}
-		if (endRun(player) == null) {
-			if (RunWorlds.isRunWorld(player.level().dimension())) {
-				// Just finished and still out there: no need to wait for the ride back.
-				sendHome(player);
-				player.sendSystemMessage(Component.literal("Back to the start area."));
-				return 1;
-			}
+		Run run = endRun(player);
+		if (run == null && !Stash.has(player) && !RunWorlds.isRunWorld(player.level().dimension())) {
 			// After a finish, death or cancel the splits stay on screen until the next start or this.
 			player.sendSystemMessage(Component.literal(hadBoard ? "Splits cleared." : "No active run."));
 			return hadBoard ? 1 : 0;
 		}
 
+		endSession(player);
 		player.sendOverlayMessage(Component.empty());
-		PowerUps.clear(player);
-		// Everything carried was gathered during the run, so it goes with it (armour and offhand too).
-		player.getInventory().clearContent();
 		sendHome(player);
-		player.sendSystemMessage(Component.literal("Run stopped. Inventory cleared."));
+		player.sendSystemMessage(Component.literal((run != null ? "Run stopped. " : "")
+			+ "Back where you started, with your own things."));
 		return 1;
 	}
 
-	/** Back to the middle of the start area; vanilla's spawn search could land on a lane wall. */
+	/** Ends the player's session short of the run itself: Airtime, the hub, and the world, deleted once they're out. */
+	private static void endSession(ServerPlayer player) {
+		Airtime.cancel(player);
+		leaveHub(player);
+		HUBS.remove(player.getUUID());
+		RunWorlds.close(player.getUUID(), 0);
+	}
+
+	/**
+	 * Back where the player was before /farout start, with everything they had then (see {@link Stash}).
+	 * Without a stash, the overworld's spawn.
+	 */
 	static void sendHome(ServerPlayer player) {
-		ServerLevel overworld = player.level().getServer().overworld();
-		BlockPos centre = SpawnHub.centre(overworld);
-		player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
-			Heading.NORTH.yaw, 0f, true);
+		if (!Stash.restore(player)) {
+			ServerLevel overworld = player.level().getServer().overworld();
+			LevelData.RespawnData spawn = overworld.getRespawnData();
+			BlockPos pos = player.adjustSpawnLocation(overworld, spawn.pos());
+			player.teleportTo(overworld, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, Set.of(), spawn.yaw(), 0f, true);
+		}
 	}
 
 	/** Removes the player's run, if any, and tells their client to stop drawing run HUD. */
@@ -435,25 +461,23 @@ public class Farout implements ModInitializer {
 
 	/** Starts the run for anyone who stepped through a portal; shows the portals to everyone still choosing. */
 	private static void tickHub(MinecraftServer server) {
-		ServerLevel overworld = server.overworld();
-		if (!hubLookedUp) {
-			// Once per server start: a hub built in an earlier session should work straight away too.
-			hubLookedUp = true;
-			BlockPos centre = SpawnHub.centre(overworld);
-			hubCentre = SpawnHub.isBuilt(overworld, centre) ? centre : null;
-		}
-		if (hubCentre != null) {
-			for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-				UUID id = player.getUUID();
-				if (player.level() == overworld && !RUNS.containsKey(id) && !IN_HUB.containsKey(id)
-					&& SpawnHub.inCentre(hubCentre, player.blockPosition())) {
-					IN_HUB.put(id, hubCentre);
-					sendRunState(player, true);
-				}
+		// Landed from Airtime, or walked back into the middle: the portals arm.
+		for (Map.Entry<UUID, BlockPos> hub : HUBS.entrySet()) {
+			UUID id = hub.getKey();
+			ServerPlayer player = server.getPlayerList().getPlayer(id);
+			if (player != null && player.level() == RunWorlds.level(id) && !RUNS.containsKey(id)
+				&& !IN_HUB.containsKey(id) && SpawnHub.inCentre(hub.getValue(), player.blockPosition())) {
+				IN_HUB.put(id, hub.getValue());
+				sendRunState(player, true);
 			}
 		}
-		if (hubCentre != null && !IN_HUB.isEmpty() && server.getTickCount() % 20 == 0) {
-			RecipeBoard.cycle(overworld, hubCentre, server.getTickCount() / 20);
+		if (server.getTickCount() % 20 == 0) {
+			for (Map.Entry<UUID, BlockPos> entry : IN_HUB.entrySet()) {
+				ServerLevel level = RunWorlds.level(entry.getKey());
+				if (level != null) {
+					RecipeBoard.cycle(level, entry.getValue(), server.getTickCount() / 20);
+				}
+			}
 		}
 
 		Iterator<Map.Entry<UUID, BlockPos>> it = IN_HUB.entrySet().iterator();
@@ -466,7 +490,7 @@ public class Farout implements ModInitializer {
 			}
 
 			BlockPos centre = entry.getValue();
-			if (!SpawnHub.isNear(centre, player.blockPosition()) || player.level() != overworld) {
+			if (!SpawnHub.isNear(centre, player.blockPosition()) || player.level() != RunWorlds.level(entry.getKey())) {
 				// Left without using a portal (teleported, climbed out): stand down until they're back in the centre.
 				it.remove();
 				sendRunState(player, false);
@@ -476,13 +500,6 @@ public class Farout implements ModInitializer {
 			Heading heading = SpawnHub.crossed(centre, player.blockPosition());
 			if (heading != null) {
 				it.remove();
-				// The run world is the same terrain without the hub, so it gets one too, and they step across
-				// to the same spot there, mid-stride.
-				ServerLevel level = RunWorlds.open(player);
-				SpawnHub.build(level, centre);
-				SpawnHub.clearEntities(level, centre);
-				player.teleportTo(level, player.getX(), player.getY(), player.getZ(), Set.of(),
-					player.getYRot(), player.getXRot(), true);
 				// The run counts from the portal line, so the timer and splits start right here.
 				// The lane runs down the middle of the hub lane they walked into, wherever they crossed the portal.
 				beginRun(player, heading, player.blockPosition(), heading.lateral(centre));
@@ -495,7 +512,7 @@ public class Farout implements ModInitializer {
 
 			long time = server.getTickCount();
 			if (time % 5 == 0) {
-				SpawnHub.particles(server.overworld(), player, centre);
+				SpawnHub.particles(player.level(), player, centre);
 			}
 			if (time % ACTION_BAR_INTERVAL_TICKS == 0) {
 				player.sendOverlayMessage(Component.literal("Walk through a portal to start"));
@@ -529,7 +546,7 @@ public class Farout implements ModInitializer {
 		SplitBoard.split(player, TARGET, run.ticks, delta, true);
 		player.sendSystemMessage(Component.literal("FAROUT! " + result).withStyle(ChatFormatting.GOLD)
 			.append(SplitBoard.delta(delta)));
-		player.sendSystemMessage(Component.literal("Back to the start area in " + FINISH_GRACE_TICKS / 20 + " seconds.")
+		player.sendSystemMessage(Component.literal("Heading home in " + FINISH_GRACE_TICKS / 20 + " seconds.")
 			.withStyle(ChatFormatting.GRAY));
 		if (newPb) {
 			player.sendSystemMessage(Component.literal("New personal best!")

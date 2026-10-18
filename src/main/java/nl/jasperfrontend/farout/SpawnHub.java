@@ -55,9 +55,8 @@ final class SpawnHub {
 	private SpawnHub() {
 	}
 
-	/** The hub centre (feet level) above world spawn. */
-	static BlockPos centre(ServerLevel level) {
-		BlockPos spawn = level.getRespawnData().pos();
+	/** The hub centre (feet level) on the ground above the given spawn point. */
+	static BlockPos centre(ServerLevel level, BlockPos spawn) {
 		return new BlockPos(spawn.getX(), surface(level, spawn.getX(), spawn.getZ()), spawn.getZ());
 	}
 
@@ -199,11 +198,6 @@ final class SpawnHub {
 
 	private static void set(ServerLevel level, BlockPos pos, BlockState state) {
 		level.setBlock(pos, state, Block.UPDATE_CLIENTS);
-	}
-
-	/** Whether a hub exists around this centre (its north portal carpet is in place). */
-	static boolean isBuilt(ServerLevel level, BlockPos c) {
-		return level.getBlockState(c.offset(0, 0, -PORTAL)).is(Blocks.PURPLE_CARPET);
 	}
 
 	/** Standing in the open centre square, where the portals get armed. */

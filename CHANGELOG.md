@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.22 - 2026-10-18
+
+Farout no longer touches your own world, so it's safe to try in a survival world you care about.
+
+- The start area and Airtime now happen in the run's copy of your world. Before, `/farout start` built the start area at your world's spawn, clearing builds, pets and other entities there.
+- Your inventory, ender chest, XP, health, hunger, effects and bed are put away when you start and given back when the run ends: finished, failed or given up. You land back exactly where you were standing. Before, starting a run emptied your inventory and ender chest for good.
+- This holds when you die or log out mid-run, and even if the game crashes.
+- Portals don't work during a run, so nothing from it reaches your own Nether or End.
+- Runs keep their own clock, so starting one no longer resets your world's time of day. Weather still clears, because Minecraft has one sky for the whole world.
+- Already have a start area at your spawn from an earlier version? It stays, as a harmless leftover; Farout doesn't use it anymore.
+
 ## 1.0.21 - 2026-10-18
 
 - Every run now happens in a fresh copy of your world, made from its seed and deleted when the run ends. Whatever you built, broke or looted on one run is gone on the next, so the same seed and direction is always the same course.

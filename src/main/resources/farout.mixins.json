@@ -3,7 +3,8 @@
 	"package": "nl.jasperfrontend.farout.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
-		"CraftingMenuMixin"
+		"CraftingMenuMixin",
+		"EntityMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

@@ -611,8 +611,7 @@
       <ul class="ends">
         <li><span class="k win">FAROUT!</span><span>You reach 10,000 blocks. You get your time, and a new personal best if you beat the old one.</span></li>
         <li><span class="k fail">Failed</span><span>You die, or you run out of leeway.</span></li>
-        <li><span class="k cancel">Cancelled</span><span>You leave the Overworld. No Nether shortcuts.</span></li>
-        <li><span class="k cancel">Given up</span><span><code>/farout stop</code> clears your inventory and takes you back to the start area.</span></li>
+        <li><span class="k cancel">Given up</span><span><code>/farout stop</code> takes you back where you started, with your own things.</span></li>
       </ul>
     </div>
   </section>
@@ -636,6 +635,11 @@
           <div class="a"><p>Then the run is over and you lose. Type <code>/farout start</code> to start again.</p></div>
         </details>
         <details>
+          <summary>Can I use Farout in my survival world?</summary>
+          <div class="a"><p>Yes. <code>/farout start</code> takes you into a copy of your world, and the start area is built there, not in your world. Your inventory, ender chest, XP, health and bed are put away while you run, and you get all of it back, right where you were standing, when the run ends: finished, failed or given up. Portals don't work during a run, so nothing from it can reach your own Nether or End.</p>
+            <p>The one thing a run does change is the weather: it starts with clear skies, and Minecraft has one sky for the whole world.</p></div>
+        </details>
+        <details>
           <summary>Is what I built on my last run still there?</summary>
           <div class="a"><p>No. Every run gets a fresh copy of your world, generated from its seed when the run starts and deleted when the run ends. No bridges or pillars left over from last time, no looted chests. Same seed, same direction, same course.</p>
             <p>When a run ends, Farout asks if you want to save the seed. Saved seeds are listed in the settings screen, with every direction you've run them in, and you can copy one to paste into Create New World.</p></div>
@@ -645,7 +649,7 @@
           <div class="a"><ul>
               <li><code>/farout start</code> lifts you above the start area for Airtime, then drops you in to pick a lane.</li>
               <li><code>/farout start north</code> (or <code>east</code>, <code>south</code>, <code>west</code>) skips the start area and starts the run straight from spawn.</li>
-              <li><code>/farout stop</code> gives up the run, clears your inventory and takes you back to the start area.</li>
+              <li><code>/farout stop</code> gives up the run and takes you back where you started, with your own things.</li>
               <li><code>/farout settings</code> shows the current settings, and <code>/farout settings &lt;name&gt; &lt;value&gt;</code> changes one. Changes apply from your next run.</li>
               <li><code>/farout menu</code> opens the settings screen, with your saved seeds.</li>
             </ul></div>

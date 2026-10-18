@@ -62,16 +62,15 @@ final class Airtime {
 	private Airtime() {
 	}
 
-	/** Lifts the player {@code height} blocks above the hub centre and freezes the game until they drop. */
-	static void start(ServerPlayer player, BlockPos centre, int height, int seconds) {
+	/** Lifts the player {@code height} blocks above the hub centre in {@code level} and freezes the game until they drop. */
+	static void start(ServerPlayer player, ServerLevel level, BlockPos centre, int height, int seconds) {
 		cancel(player);
-		ServerLevel overworld = player.level().getServer().overworld();
-		double y = Math.min(centre.getY() + height, overworld.getMaxY() - 2);
+		double y = Math.min(centre.getY() + height, level.getMaxY() - 2);
 		State state = new State(centre.getX() + 0.5, y, centre.getZ() + 0.5, seconds,
 			player.getAbilities());
 		AIRBORNE.put(player.getUUID(), state);
 
-		player.teleportTo(overworld, state.x, state.y, state.z, Set.of(), Heading.NORTH.yaw, 0f, true);
+		player.teleportTo(level, state.x, state.y, state.z, Set.of(), Heading.NORTH.yaw, 0f, true);
 		hover(player, true, state);
 
 		ServerTickRateManager ticks = player.level().getServer().tickRateManager();
@@ -141,7 +140,7 @@ final class Airtime {
 			hover(player, true, state);
 		}
 		if (drifted(player, state) || Math.abs(player.getY() - state.y) > DRIFT) {
-			player.teleportTo(player.level().getServer().overworld(), state.x, state.y, state.z,
+			player.teleportTo(player.level(), state.x, state.y, state.z,
 				Relative.ROTATION, 0f, 0f, false);
 		}
 
@@ -173,7 +172,7 @@ final class Airtime {
 		}
 		// Steering while falling could miss the centre; keep the fall straight down, speed and view intact.
 		if (drifted(player, state)) {
-			player.teleportTo(player.level().getServer().overworld(), state.x, 0, state.z,
+			player.teleportTo(player.level(), state.x, 0, state.z,
 				Relative.union(Relative.ROTATION, Set.of(Relative.Y, Relative.DELTA_Y)), 0f, 0f, false);
 		}
 	}
