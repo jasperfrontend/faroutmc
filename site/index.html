@@ -234,6 +234,64 @@
     align-self: stretch;
   }
 
+  /* Power-up flip cards: the effect on the front, the crafting recipe on the back.
+     Hover flips them on devices with a mouse; tap or Enter flips them everywhere else. */
+  .grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
+  .flip { perspective: 1400px; cursor: pointer; }
+  .flip:focus-visible { outline: 3px solid var(--cyan); outline-offset: 4px; }
+  .flip-inner {
+    display: grid; height: 100%;
+    transform-style: preserve-3d;
+    transition: transform .55s cubic-bezier(.2, .7, .3, 1);
+  }
+  .flip.flipped .flip-inner { transform: rotateY(180deg); }
+  @media (hover: hover) { .flip:hover .flip-inner { transform: rotateY(180deg); } }
+  .flip-face { grid-area: 1 / 1; position: relative; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+  .flip-back { transform: rotateY(180deg); align-items: center; container-type: inline-size; }
+  .flip-hint {
+    position: absolute; top: 18px; right: 18px;
+    font: 400 1.05rem/1 "Jersey 10", sans-serif;
+    letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .flip-hint .tap { display: none; }
+  @media (hover: none) { .flip-hint .hover { display: none; } .flip-hint .tap { display: inline; } }
+
+  /* A Minecraft crafting table, measured in GUI pixels (--u) so it scales cleanly */
+  .mc {
+    --u: 2px;
+    --px: var(--u);
+    padding: calc(7 * var(--u));
+    background: #c6c6c6;
+    border: var(--u) solid #000;
+    box-shadow: inset calc(2 * var(--u)) calc(2 * var(--u)) 0 #fff, inset calc(-2 * var(--u)) calc(-2 * var(--u)) 0 #555;
+  }
+  @container (min-width: 420px) { .mc { --u: 3px; } }
+  @container (max-width: 279px) { .mc { --u: 1.5px; } }
+  .mc-title { margin: 0 0 calc(4 * var(--u)); font: 400 calc(10 * var(--u))/1 "Jersey 10", sans-serif; color: #3f3f3f; }
+  .mc-row { display: flex; align-items: center; gap: calc(10 * var(--u)); }
+  .mc-grid { display: grid; grid-template-columns: repeat(3, calc(18 * var(--u))); }
+  .slot {
+    display: grid; place-items: center;
+    width: calc(18 * var(--u)); height: calc(18 * var(--u));
+    background: #8b8b8b;
+    box-shadow: inset var(--u) var(--u) 0 #373737, inset calc(-1 * var(--u)) calc(-1 * var(--u)) 0 #fff;
+  }
+  .slot img { width: calc(16 * var(--u)); height: calc(16 * var(--u)); image-rendering: pixelated; }
+  .slot.out { position: relative; width: calc(26 * var(--u)); height: calc(26 * var(--u)); }
+  .slot.out::after { /* the enchantment glint, clipped to the item's shape */
+    content: "";
+    position: absolute; inset: calc(5 * var(--u));
+    background: linear-gradient(115deg, transparent 43%, #d7b0ffaa 48%, #f0e0ff 50%, #d7b0ffaa 52%, transparent 57%) 0 0 / 300% 100%, #a64dff30;
+    -webkit-mask: var(--item) center / contain no-repeat; mask: var(--item) center / contain no-repeat;
+    mix-blend-mode: screen;
+    animation: glint 2.4s linear infinite;
+  }
+  @keyframes glint { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  .mc-arrow { width: calc(22 * var(--u)); height: calc(15 * var(--u)); fill: #8b8b8b; }
+  .recipe-key { margin: 18px 0 0; padding: 0; list-style: none; font-size: .95rem; color: var(--muted); text-align: center; }
+  .recipe-key b { color: var(--text); font-weight: 600; }
+
   /* Lane diagram */
   .lane-row { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
   .lane-fig { background: var(--panel); border: 3px solid var(--line); box-shadow: 6px 6px 0 #050a12; padding: 16px; }
@@ -448,30 +506,94 @@
       <h2>Craft your way through</h2>
       <p class="lead">Four power-ups you can craft along the way. Each lasts 30 seconds from the first time you use it, then it's gone. Their recipes float in the corners of the start area, and they're in your recipe book too.</p>
 
-      <div class="grid grid-4">
-        <div class="card">
-          <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M2 0h3v5h2v1h1v2h-7v-2h1z"/><path fill="#2357e8" d="M2 1h3v1h-3z"/></svg>
-          <h3>Mountain Hop Boots</h3>
-          <p>Jump Boost X and no fall damage.</p>
-          <span class="tag">Starts when you put them on</span>
+      <div class="grid grid-2">
+        <div class="flip" tabindex="0">
+          <div class="flip-inner">
+            <div class="card flip-face">
+              <span class="flip-hint" aria-hidden="true"><span class="hover">Hover</span><span class="tap">Tap</span> for recipe</span>
+              <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M2 0h3v5h2v1h1v2h-7v-2h1z"/><path fill="#2357e8" d="M2 1h3v1h-3z"/></svg>
+              <h3>Mountain Hop Boots</h3>
+              <p>Jump Boost X and no fall damage.</p>
+              <span class="tag">Starts when you put them on</span>
+            </div>
+            <div class="card flip-face flip-back">
+              <div class="mc stepped" role="img" aria-label="Mountain Hop Boots crafting recipe">
+                <p class="mc-title">Crafting</p>
+                <div class="mc-row">
+                  <div class="mc-grid"><span class="slot"><img src="items/minecraft.wiki/coal/small.png" alt="Coal" title="Coal" width="16" height="16"></span><span class="slot"></span><span class="slot"><img src="items/minecraft.wiki/coal/small.png" alt="Coal" title="Coal" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/coal/small.png" alt="Coal" title="Coal" width="16" height="16"></span><span class="slot"><img src="items/minecraft.fandom.com/boots/small.png" alt="Any boots" title="Any boots" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/coal/small.png" alt="Coal" title="Coal" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/coal/small.png" alt="Coal" title="Coal" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/feather/small.png" alt="Feather" title="Feather" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/coal/small.png" alt="Coal" title="Coal" width="16" height="16"></span></div>
+                  <svg class="mc-arrow" viewBox="0 0 22 15" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 6h15v3h-15z M14 0h1v15h-1z M15 1h1v13h-1z M16 2h1v11h-1z M17 3h1v9h-1z M18 4h1v7h-1z M19 5h1v5h-1z M20 6h1v3h-1z M21 7h1v1h-1z"/></svg>
+                  <span class="slot out" style="--item: url(items/minecraft.fandom.com/boots/small.png)"><img src="items/minecraft.fandom.com/boots/small.png" alt="Mountain Hop Boots" title="Mountain Hop Boots" width="16" height="16"></span>
+                </div>
+              </div>
+              <p class="recipe-key"><b>6 coal</b> around <b>any boots</b>, a <b>feather</b> below. Out come your boots, powered up.</p>
+            </div>
+          </div>
         </div>
-        <div class="card">
-          <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M1 0h5v1h1v1h1v4h-1v-3h-1v-1h-1v-1h-4z"/><path fill="#a0773c" d="M4 3h1v1h-1z M3 4h1v1h-1z M2 5h1v1h-1z M1 6h1v1h-1z M0 7h1v1h-1z"/></svg>
-          <h3>Power Drill</h3>
-          <p>A pickaxe with max Haste that mines 3x3.</p>
-          <span class="tag">Starts on the first block you mine</span>
+        <div class="flip" tabindex="0">
+          <div class="flip-inner">
+            <div class="card flip-face">
+              <span class="flip-hint" aria-hidden="true"><span class="hover">Hover</span><span class="tap">Tap</span> for recipe</span>
+              <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M1 0h5v1h1v1h1v4h-1v-3h-1v-1h-1v-1h-4z"/><path fill="#a0773c" d="M4 3h1v1h-1z M3 4h1v1h-1z M2 5h1v1h-1z M1 6h1v1h-1z M0 7h1v1h-1z"/></svg>
+              <h3>Power Drill</h3>
+              <p>A pickaxe with max Haste that mines 3x3.</p>
+              <span class="tag">Starts on the first block you mine</span>
+            </div>
+            <div class="card flip-face flip-back">
+              <div class="mc stepped" role="img" aria-label="Power Drill crafting recipe">
+                <p class="mc-title">Crafting</p>
+                <div class="mc-row">
+                  <div class="mc-grid"><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/pickaxe/small.png" alt="Any pickaxe" title="Any pickaxe" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/torch/small.webp" alt="Torch" title="Torch" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span></div>
+                  <svg class="mc-arrow" viewBox="0 0 22 15" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 6h15v3h-15z M14 0h1v15h-1z M15 1h1v13h-1z M16 2h1v11h-1z M17 3h1v9h-1z M18 4h1v7h-1z M19 5h1v5h-1z M20 6h1v3h-1z M21 7h1v1h-1z"/></svg>
+                  <span class="slot out" style="--item: url(items/minecraft.wiki/pickaxe/small.png)"><img src="items/minecraft.wiki/pickaxe/small.png" alt="Power Drill" title="Power Drill" width="16" height="16"></span>
+                </div>
+              </div>
+              <p class="recipe-key"><b>6 buttons</b> around <b>any pickaxe</b>, a <b>torch</b> below. Out comes your pickaxe, powered up.</p>
+            </div>
+          </div>
         </div>
-        <div class="card">
-          <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M1 0h6v4h-1v2h-1v1h-2v-1h-1v-2h-1z"/><path fill="#2357e8" d="M3 1h2v4h-2z"/></svg>
-          <h3>Can't Hurt Me</h3>
-          <p>A shield that makes you immune to everything except falling.</p>
-          <span class="tag">Starts when you raise it</span>
+        <div class="flip" tabindex="0">
+          <div class="flip-inner">
+            <div class="card flip-face">
+              <span class="flip-hint" aria-hidden="true"><span class="hover">Hover</span><span class="tap">Tap</span> for recipe</span>
+              <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M1 0h6v4h-1v2h-1v1h-2v-1h-1v-2h-1z"/><path fill="#2357e8" d="M3 1h2v4h-2z"/></svg>
+              <h3>Can't Hurt Me</h3>
+              <p>A shield that makes you immune to everything except falling.</p>
+              <span class="tag">Starts when you raise it</span>
+            </div>
+            <div class="card flip-face flip-back">
+              <div class="mc stepped" role="img" aria-label="Can't Hurt Me crafting recipe">
+                <p class="mc-title">Crafting</p>
+                <div class="mc-row">
+                  <div class="mc-grid"><span class="slot"><img src="items/minecraft.wiki/log/small.png" alt="Any log" title="Any log" width="16" height="16"></span><span class="slot"></span><span class="slot"><img src="items/minecraft.wiki/log/small.png" alt="Any log" title="Any log" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/log/small.png" alt="Any log" title="Any log" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/shield/small.png" alt="Shield" title="Shield" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/log/small.png" alt="Any log" title="Any log" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/log/small.png" alt="Any log" title="Any log" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/carpet/small.png" alt="Any carpet" title="Any carpet" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/log/small.png" alt="Any log" title="Any log" width="16" height="16"></span></div>
+                  <svg class="mc-arrow" viewBox="0 0 22 15" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 6h15v3h-15z M14 0h1v15h-1z M15 1h1v13h-1z M16 2h1v11h-1z M17 3h1v9h-1z M18 4h1v7h-1z M19 5h1v5h-1z M20 6h1v3h-1z M21 7h1v1h-1z"/></svg>
+                  <span class="slot out" style="--item: url(items/minecraft.wiki/shield/small.png)"><img src="items/minecraft.wiki/shield/small.png" alt="Can't Hurt Me" title="Can't Hurt Me" width="16" height="16"></span>
+                </div>
+              </div>
+              <p class="recipe-key"><b>6 logs</b> around a <b>shield</b>, <b>any carpet</b> below. Out comes your shield, powered up.</p>
+            </div>
+          </div>
         </div>
-        <div class="card">
-          <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="#8ea3bd" d="M2 0h1v1h-1z M4 0h1v1h-1z"/><path fill="currentColor" d="M0 2h6v6h-6z M6 3h2v3h-2v-1h1v-1h-1z"/><path fill="#6b4226" d="M1 3h4v1h-4z"/></svg>
-          <h3>Morning Coffee</h3>
-          <p>Speed III. Brewed from a bed, only in the minute after you sleep through a night. Right-click to drink.</p>
-          <span class="tag">Starts when you drink it</span>
+        <div class="flip" tabindex="0">
+          <div class="flip-inner">
+            <div class="card flip-face">
+              <span class="flip-hint" aria-hidden="true"><span class="hover">Hover</span><span class="tap">Tap</span> for recipe</span>
+              <svg class="icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="#8ea3bd" d="M2 0h1v1h-1z M4 0h1v1h-1z"/><path fill="currentColor" d="M0 2h6v6h-6z M6 3h2v3h-2v-1h1v-1h-1z"/><path fill="#6b4226" d="M1 3h4v1h-4z"/></svg>
+              <h3>Morning Coffee</h3>
+              <p>Speed III. Brewed from a bed, only in the minute after you sleep through a night. Right-click to drink.</p>
+              <span class="tag">Starts when you drink it</span>
+            </div>
+            <div class="card flip-face flip-back">
+              <div class="mc stepped" role="img" aria-label="Morning Coffee crafting recipe">
+                <p class="mc-title">Crafting</p>
+                <div class="mc-row">
+                  <div class="mc-grid"><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/bed/small.png" alt="Any bed" title="Any bed" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/torch/small.webp" alt="Torch" title="Torch" width="16" height="16"></span><span class="slot"><img src="items/minecraft.wiki/button/small.png" alt="Any button" title="Any button" width="16" height="16"></span></div>
+                  <svg class="mc-arrow" viewBox="0 0 22 15" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 6h15v3h-15z M14 0h1v15h-1z M15 1h1v13h-1z M16 2h1v11h-1z M17 3h1v9h-1z M18 4h1v7h-1z M19 5h1v5h-1z M20 6h1v3h-1z M21 7h1v1h-1z"/></svg>
+                  <span class="slot out" style="--item: url(items/minecraft.wiki/bed/small.png)"><img src="items/minecraft.wiki/bed/small.png" alt="Morning Coffee" title="Morning Coffee" width="16" height="16"></span>
+                </div>
+              </div>
+              <p class="recipe-key"><b>6 buttons</b> around <b>any bed</b>, a <b>torch</b> below. Only works in the minute after you sleep through a night.</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -604,10 +726,24 @@
     <span><svg width="46" height="16" viewBox="-10 0 23 8" style="vertical-align:middle;margin-right:8px" aria-hidden="true"><use href="#fo"/></svg>Farout, a Minecraft mod for Fabric</span>
     <span>Created by <a href="https://www.curseforge.com/members/radiojasper/projects">Jasper</a></span>
     <span>Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.</span>
+    <span>Item icons from the <a href="https://minecraft.wiki/">Minecraft Wiki</a> and the <a href="https://minecraft.fandom.com/wiki/Boots">Minecraft Fandom wiki</a>. Textures © Mojang Studios, used under the <a href="https://www.minecraft.net/en-us/usage-guidelines">Minecraft Usage Guidelines</a>.</span>
   </div>
 </footer>
 
 <script>
+  // Power-up cards: hover flips them where there's a mouse (CSS), tap or Enter/Space everywhere.
+  (() => {
+    const canHover = matchMedia('(hover: hover)');
+    for (const el of document.querySelectorAll('.flip')) {
+      el.addEventListener('click', () => { if (!canHover.matches) el.classList.toggle('flipped'); });
+      el.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        el.classList.toggle('flipped');
+      });
+    }
+  })();
+
   // FAQ accordion: one item open at a time, sliding open and shut, and the
   // opened item scrolled to just below the top of the screen.
   (() => {
