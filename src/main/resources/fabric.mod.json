@@ -7,7 +7,12 @@
 	"authors": [
 		"Jasper van der Meer"
 	],
-	"license": "All-Rights-Reserved",
+	"contact": {
+		"homepage": "https://www.curseforge.com/minecraft/mc-mods/farout",
+		"sources": "https://github.com/jasperfrontend/faroutmc",
+		"issues": "https://github.com/jasperfrontend/faroutmc/issues"
+	},
+	"license": "MIT",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
