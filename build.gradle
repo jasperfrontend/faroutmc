@@ -29,15 +29,34 @@ fabricApi {
 		createSourceSet = true
 		modId = "farout-gametest"
 		enableGameTests = true
-		enableClientGameTests = false
+		// .\gradlew runClientGameTest plays the run-world loop in a real client; not in CI, it needs a display.
+		enableClientGameTests = true
 		eula = true
 	}
+}
+
+// The client game test finishes a run too, so it needs the short course.
+loom.runs.named("clientGameTest") {
+	vmArgs "-Dfarout.target=100", "-Dfarout.split=10"
+}
+
+repositories {
+	// Fantasy: temporary worlds for runs.
+	maven { url = "https://maven.nucleoid.xyz/" }
+	// Mod Menu: the Configure button that opens the settings screen.
+	maven { url = "https://maven.terraformersmc.com/releases/" }
 }
 
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	// Bundled inside the jar, so players don't have to install it separately.
+	implementation "xyz.nucleoid:fantasy:${project.fantasy_version}"
+	include "xyz.nucleoid:fantasy:${project.fantasy_version}"
+	// Optional: without Mod Menu installed the settings screen is still reachable with /farout menu.
+	compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+	localRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 processResources {

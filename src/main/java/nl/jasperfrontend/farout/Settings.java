@@ -10,14 +10,16 @@ import java.nio.file.Path;
 import java.util.Properties;
 
 /**
- * Player-tweakable settings in config/farout/settings.properties. Edit the file by hand or use
- * /farout settings &lt;name&gt; &lt;value&gt;; either way it's read again at the start of every run.
+ * Player-tweakable settings in config/farout/settings.properties. Edit the file by hand, use
+ * /farout settings &lt;name&gt; &lt;value&gt; or the settings screen; it's read again at the start of every run.
  */
-final class Settings {
-	static final String PATH_WIDTH = "pathWidth";
-	static final String LEEWAY_BLOCKS = "leewayBlocks";
-	static final String AIRTIME_HEIGHT = "airtimeHeight";
-	static final String AIRTIME_SECONDS = "airtimeSeconds";
+public final class Settings {
+	public static final String PATH_WIDTH = "pathWidth";
+	public static final String LEEWAY_BLOCKS = "leewayBlocks";
+	public static final String AIRTIME_HEIGHT = "airtimeHeight";
+	public static final String AIRTIME_SECONDS = "airtimeSeconds";
+	/** Every setting, in the order they're listed. */
+	public static final String[] NAMES = {PATH_WIDTH, LEEWAY_BLOCKS, AIRTIME_HEIGHT, AIRTIME_SECONDS};
 
 	static final int DEFAULT_PATH_WIDTH = 7;
 	static final int DEFAULT_LEEWAY_BLOCKS = 200;
@@ -44,8 +46,47 @@ final class Settings {
 		return FabricLoader.getInstance().getConfigDir().resolve("farout").resolve("settings.properties");
 	}
 
+	/** Lowest value the command and the settings screen accept. */
+	public static int min(String name) {
+		return switch (name) {
+			case PATH_WIDTH, AIRTIME_SECONDS -> 1;
+			case LEEWAY_BLOCKS, AIRTIME_HEIGHT -> 0;
+			default -> throw new IllegalArgumentException("Unknown setting " + name);
+		};
+	}
+
+	/** Highest value the command and the settings screen accept. */
+	public static int max(String name) {
+		return switch (name) {
+			case PATH_WIDTH -> 64;
+			case LEEWAY_BLOCKS -> 100_000;
+			case AIRTIME_HEIGHT, AIRTIME_SECONDS -> 300;
+			default -> throw new IllegalArgumentException("Unknown setting " + name);
+		};
+	}
+
+	public static int defaultValue(String name) {
+		return switch (name) {
+			case PATH_WIDTH -> DEFAULT_PATH_WIDTH;
+			case LEEWAY_BLOCKS -> DEFAULT_LEEWAY_BLOCKS;
+			case AIRTIME_HEIGHT -> DEFAULT_AIRTIME_HEIGHT;
+			case AIRTIME_SECONDS -> DEFAULT_AIRTIME_SECONDS;
+			default -> throw new IllegalArgumentException("Unknown setting " + name);
+		};
+	}
+
+	public int get(String name) {
+		return switch (name) {
+			case PATH_WIDTH -> pathWidth;
+			case LEEWAY_BLOCKS -> leewayBlocks;
+			case AIRTIME_HEIGHT -> airtimeHeight;
+			case AIRTIME_SECONDS -> airtimeSeconds;
+			default -> throw new IllegalArgumentException("Unknown setting " + name);
+		};
+	}
+
 	/** Reads the file, writing it with defaults first if it doesn't exist yet so it's easy to find. */
-	static Settings load() {
+	public static Settings load() {
 		Properties props = read();
 		Settings settings = new Settings(
 			readInt(props, PATH_WIDTH, DEFAULT_PATH_WIDTH, 1),
@@ -62,7 +103,7 @@ final class Settings {
 		return settings;
 	}
 
-	Settings with(String name, int value) {
+	public Settings with(String name, int value) {
 		return switch (name) {
 			case PATH_WIDTH -> new Settings(value, leewayBlocks, airtimeHeight, airtimeSeconds);
 			case LEEWAY_BLOCKS -> new Settings(pathWidth, value, airtimeHeight, airtimeSeconds);
@@ -72,7 +113,7 @@ final class Settings {
 		};
 	}
 
-	void save() throws IOException {
+	public void save() throws IOException {
 		Properties props = new Properties();
 		props.setProperty(PATH_WIDTH, Integer.toString(pathWidth));
 		props.setProperty(LEEWAY_BLOCKS, Integer.toString(leewayBlocks));

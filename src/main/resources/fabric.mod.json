@@ -20,6 +20,9 @@
 		],
 		"client": [
 			"nl.jasperfrontend.farout.client.FaroutClient"
+		],
+		"modmenu": [
+			"nl.jasperfrontend.farout.client.FaroutModMenu"
 		]
 	},
 	"mixins": [

@@ -49,6 +49,8 @@ public class Farout implements ModInitializer {
 	public static final int TARGET = Integer.getInteger("farout.target", 10_000);
 	public static final int SPLIT_INTERVAL = Integer.getInteger("farout.split", 1_000);
 	private static final int ACTION_BAR_INTERVAL_TICKS = 10;
+	/** How long you get to take in the finish before you're taken back to the start area. */
+	private static final int FINISH_GRACE_TICKS = 100;
 
 	private static final Map<UUID, Run> RUNS = new HashMap<>();
 	/** Players standing in the start area, picking a direction; value is the hub centre. */
@@ -61,6 +63,8 @@ public class Farout implements ModInitializer {
 	public void onInitialize() {
 		PayloadTypeRegistry.clientboundPlay().register(RunStatePayload.TYPE, RunStatePayload.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(LanePayload.TYPE, LanePayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(SeedOfferPayload.TYPE, SeedOfferPayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(OpenMenuPayload.TYPE, OpenMenuPayload.CODEC);
 		Registry.register(BuiltInRegistries.RECIPE_SERIALIZER, Identifier.fromNamespaceAndPath(MOD_ID, "power_up"),
 			PowerUpRecipe.SERIALIZER);
 		PowerUps.register();
@@ -74,25 +78,17 @@ public class Farout implements ModInitializer {
 			}
 			LiteralArgumentBuilder<CommandSourceStack> settings = Commands.literal("settings")
 				.executes(ctx -> showSettings(ctx.getSource()));
-			settings.then(Commands.literal(Settings.PATH_WIDTH)
-				.then(Commands.argument("blocks", IntegerArgumentType.integer(1, 64))
-					.executes(ctx -> setSetting(ctx.getSource(), Settings.PATH_WIDTH,
-						IntegerArgumentType.getInteger(ctx, "blocks")))));
-			settings.then(Commands.literal(Settings.LEEWAY_BLOCKS)
-				.then(Commands.argument("blocks", IntegerArgumentType.integer(0, 100_000))
-					.executes(ctx -> setSetting(ctx.getSource(), Settings.LEEWAY_BLOCKS,
-						IntegerArgumentType.getInteger(ctx, "blocks")))));
-			settings.then(Commands.literal(Settings.AIRTIME_HEIGHT)
-				.then(Commands.argument("blocks", IntegerArgumentType.integer(0, 300))
-					.executes(ctx -> setSetting(ctx.getSource(), Settings.AIRTIME_HEIGHT,
-						IntegerArgumentType.getInteger(ctx, "blocks")))));
-			settings.then(Commands.literal(Settings.AIRTIME_SECONDS)
-				.then(Commands.argument("seconds", IntegerArgumentType.integer(1, 300))
-					.executes(ctx -> setSetting(ctx.getSource(), Settings.AIRTIME_SECONDS,
-						IntegerArgumentType.getInteger(ctx, "seconds")))));
+			for (String name : Settings.NAMES) {
+				String unit = name.equals(Settings.AIRTIME_SECONDS) ? "seconds" : "blocks";
+				settings.then(Commands.literal(name)
+					.then(Commands.argument(unit, IntegerArgumentType.integer(Settings.min(name), Settings.max(name)))
+						.executes(ctx -> setSetting(ctx.getSource(), name, IntegerArgumentType.getInteger(ctx, unit)))));
+			}
 			dispatcher.register(Commands.literal("farout")
 				.then(start)
 				.then(settings)
+				.then(Commands.literal("menu")
+					.executes(ctx -> openMenu(ctx.getSource().getPlayerOrException())))
 				.then(Commands.literal("stop")
 					.executes(ctx -> stop(ctx.getSource().getPlayerOrException()))));
 		});
@@ -121,8 +117,10 @@ public class Farout implements ModInitializer {
 				Airtime.cancel(player);
 				leaveHub(player);
 			}
-			if (to.dimension() != Level.OVERWORLD && endRun(player) != null) {
-				player.sendSystemMessage(Component.literal("Run cancelled: left the overworld")
+			// beginRun moves the player into the run world before the run exists, so that move doesn't count.
+			Run run = RUNS.get(player.getUUID());
+			if (run != null && to != run.level && endRun(player) != null) {
+				player.sendSystemMessage(Component.literal("Run cancelled: left the run's world")
 					.withStyle(ChatFormatting.RED));
 			}
 		});
@@ -132,6 +130,11 @@ public class Farout implements ModInitializer {
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			PowerUps.clear(handler.getPlayer());
 			RUNS.remove(handler.getPlayer().getUUID());
+			// Saved after this, so they log back in at the start area rather than in a world that's gone.
+			if (RunWorlds.isRunWorld(handler.getPlayer().level().dimension())) {
+				sendHome(handler.getPlayer());
+			}
+			RunWorlds.close(handler.getPlayer().getUUID(), 0);
 			IN_HUB.remove(handler.getPlayer().getUUID());
 			Airtime.forget(server, handler.getPlayer().getUUID());
 			SplitBoard.forget(handler.getPlayer().getUUID());
@@ -144,6 +147,7 @@ public class Farout implements ModInitializer {
 			Airtime.forgetAll();
 			SplitBoard.forgetAll();
 			PowerUps.clearAll();
+			RunWorlds.forgetAll();
 		});
 	}
 
@@ -197,22 +201,29 @@ public class Farout implements ModInitializer {
 
 		IN_HUB.remove(player.getUUID());
 		Airtime.cancel(player);
-		BlockPos origin = teleportToSpawn(player, heading.yaw);
+		BlockPos origin = teleportToSpawn(player, RunWorlds.open(player), heading.yaw);
 		beginRun(player, heading, origin, heading.lateral(origin));
+		return 1;
+	}
+
+	/** /farout menu: the settings screen and saved seeds, which live on the client. */
+	private static int openMenu(ServerPlayer player) {
+		if (!ServerPlayNetworking.canSend(player, OpenMenuPayload.TYPE)) {
+			player.sendSystemMessage(Component.literal("The settings screen needs Farout installed on your side too.")
+				.withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		ServerPlayNetworking.send(player, OpenMenuPayload.INSTANCE);
 		return 1;
 	}
 
 	private static int showSettings(CommandSourceStack source) {
 		Settings settings = Settings.load();
 		source.sendSystemMessage(Component.literal("Farout settings (config/farout/settings.properties):"));
-		source.sendSystemMessage(Component.literal("  " + Settings.PATH_WIDTH + ": " + settings.pathWidth
-			+ " (default " + Settings.DEFAULT_PATH_WIDTH + ")"));
-		source.sendSystemMessage(Component.literal("  " + Settings.LEEWAY_BLOCKS + ": " + settings.leewayBlocks
-			+ " (default " + Settings.DEFAULT_LEEWAY_BLOCKS + ")"));
-		source.sendSystemMessage(Component.literal("  " + Settings.AIRTIME_HEIGHT + ": " + settings.airtimeHeight
-			+ " (default " + Settings.DEFAULT_AIRTIME_HEIGHT + ")"));
-		source.sendSystemMessage(Component.literal("  " + Settings.AIRTIME_SECONDS + ": " + settings.airtimeSeconds
-			+ " (default " + Settings.DEFAULT_AIRTIME_SECONDS + ")"));
+		for (String name : Settings.NAMES) {
+			source.sendSystemMessage(Component.literal("  " + name + ": " + settings.get(name)
+				+ " (default " + Settings.defaultValue(name) + ")"));
+		}
 		return 1;
 	}
 
@@ -240,7 +251,7 @@ public class Farout implements ModInitializer {
 
 		Settings settings = Settings.load();
 		Lane lane = new Lane(heading, laneCentre, settings.pathWidth, settings.leewayBlocks, player);
-		RUNS.put(player.getUUID(), new Run(heading, origin, lane, PersonalBests.load(heading)));
+		RUNS.put(player.getUUID(), new Run(heading, player.level(), origin, lane, PersonalBests.load(heading)));
 		sendRunState(player, true);
 		if (ServerPlayNetworking.canSend(player, LanePayload.TYPE)) {
 			ServerPlayNetworking.send(player, lane.payload());
@@ -285,10 +296,7 @@ public class Farout implements ModInitializer {
 		if (Airtime.cancel(player)) {
 			// Down to the start area rather than leaving them hanging, or falling, wherever they were.
 			leaveHub(player);
-			ServerLevel overworld = player.level().getServer().overworld();
-			BlockPos centre = SpawnHub.centre(overworld);
-			player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
-				Heading.NORTH.yaw, 0f, true);
+			sendHome(player);
 			player.resetFallDistance();
 			player.sendOverlayMessage(Component.empty());
 			player.sendSystemMessage(Component.literal("Airtime cancelled."));
@@ -300,6 +308,12 @@ public class Farout implements ModInitializer {
 			return 1;
 		}
 		if (endRun(player) == null) {
+			if (RunWorlds.isRunWorld(player.level().dimension())) {
+				// Just finished and still out there: no need to wait for the ride back.
+				sendHome(player);
+				player.sendSystemMessage(Component.literal("Back to the start area."));
+				return 1;
+			}
 			// After a finish, death or cancel the splits stay on screen until the next start or this.
 			player.sendSystemMessage(Component.literal(hadBoard ? "Splits cleared." : "No active run."));
 			return hadBoard ? 1 : 0;
@@ -309,13 +323,17 @@ public class Farout implements ModInitializer {
 		PowerUps.clear(player);
 		// Everything carried was gathered during the run, so it goes with it (armour and offhand too).
 		player.getInventory().clearContent();
-		// Back to the middle of the start area; vanilla's spawn search could land on a lane wall.
+		sendHome(player);
+		player.sendSystemMessage(Component.literal("Run stopped. Inventory cleared."));
+		return 1;
+	}
+
+	/** Back to the middle of the start area; vanilla's spawn search could land on a lane wall. */
+	static void sendHome(ServerPlayer player) {
 		ServerLevel overworld = player.level().getServer().overworld();
 		BlockPos centre = SpawnHub.centre(overworld);
 		player.teleportTo(overworld, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
 			Heading.NORTH.yaw, 0f, true);
-		player.sendSystemMessage(Component.literal("Run stopped. Inventory cleared."));
-		return 1;
 	}
 
 	/** Removes the player's run, if any, and tells their client to stop drawing run HUD. */
@@ -323,8 +341,20 @@ public class Farout implements ModInitializer {
 		Run run = RUNS.remove(player.getUUID());
 		if (run != null) {
 			sendRunState(player, false);
+			retire(player, run, 0);
 		}
 		return run;
+	}
+
+	/**
+	 * Every run that ends in play comes through here: its world is deleted once the player is out of it
+	 * (taken home after graceTicks if they're still alive in there), and the client offers to save the seed.
+	 */
+	private static void retire(ServerPlayer player, Run run, int graceTicks) {
+		RunWorlds.close(player.getUUID(), graceTicks);
+		if (ServerPlayNetworking.canSend(player, SeedOfferPayload.TYPE)) {
+			ServerPlayNetworking.send(player, new SeedOfferPayload(run.level.getSeed(), run.heading.id()));
+		}
 	}
 
 	private static void sendRunState(ServerPlayer player, boolean active) {
@@ -337,14 +367,13 @@ public class Farout implements ModInitializer {
 		}
 	}
 
-	/** Teleports to a safe spot at world spawn and returns that block position. */
-	private static BlockPos teleportToSpawn(ServerPlayer player, float yaw) {
-		ServerLevel overworld = player.level().getServer().overworld();
-		LevelData.RespawnData spawn = overworld.getRespawnData();
+	/** Teleports to a safe spot at the overworld's spawn, in the given run world, and returns that block position. */
+	private static BlockPos teleportToSpawn(ServerPlayer player, ServerLevel level, float yaw) {
+		LevelData.RespawnData spawn = player.level().getServer().overworld().getRespawnData();
 		// Vanilla's new-player placement: loads the chunks and searches the spawn radius for a safe spot.
-		BlockPos pos = player.adjustSpawnLocation(overworld, spawn.pos());
+		BlockPos pos = player.adjustSpawnLocation(level, spawn.pos());
 
-		player.teleportTo(overworld, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, Set.of(), yaw, 0f, true);
+		player.teleportTo(level, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, Set.of(), yaw, 0f, true);
 		return pos;
 	}
 
@@ -352,6 +381,7 @@ public class Farout implements ModInitializer {
 		Airtime.tick(server);
 		tickHub(server);
 		PowerUps.tick(server);
+		RunWorlds.tick(server);
 
 		Iterator<Map.Entry<UUID, Run>> it = RUNS.entrySet().iterator();
 		while (it.hasNext()) {
@@ -380,6 +410,7 @@ public class Farout implements ModInitializer {
 				it.remove();
 				sendRunState(player, false);
 				finish(server, player, run);
+				retire(player, run, FINISH_GRACE_TICKS);
 				continue;
 			}
 
@@ -392,6 +423,7 @@ public class Farout implements ModInitializer {
 					"Out of leeway! Run failed at " + Format.blocks(progress) + " blocks (" + Format.time(run.ticks) + ")"
 				).withStyle(ChatFormatting.RED));
 				Lane.strike(player);
+				retire(player, run, 0);
 				continue;
 			}
 
@@ -444,6 +476,13 @@ public class Farout implements ModInitializer {
 			Heading heading = SpawnHub.crossed(centre, player.blockPosition());
 			if (heading != null) {
 				it.remove();
+				// The run world is the same terrain without the hub, so it gets one too, and they step across
+				// to the same spot there, mid-stride.
+				ServerLevel level = RunWorlds.open(player);
+				SpawnHub.build(level, centre);
+				SpawnHub.clearEntities(level, centre);
+				player.teleportTo(level, player.getX(), player.getY(), player.getZ(), Set.of(),
+					player.getYRot(), player.getXRot(), true);
 				// The run counts from the portal line, so the timer and splits start right here.
 				// The lane runs down the middle of the hub lane they walked into, wherever they crossed the portal.
 				beginRun(player, heading, player.blockPosition(), heading.lateral(centre));
@@ -490,6 +529,8 @@ public class Farout implements ModInitializer {
 		SplitBoard.split(player, TARGET, run.ticks, delta, true);
 		player.sendSystemMessage(Component.literal("FAROUT! " + result).withStyle(ChatFormatting.GOLD)
 			.append(SplitBoard.delta(delta)));
+		player.sendSystemMessage(Component.literal("Back to the start area in " + FINISH_GRACE_TICKS / 20 + " seconds.")
+			.withStyle(ChatFormatting.GRAY));
 		if (newPb) {
 			player.sendSystemMessage(Component.literal("New personal best!")
 				.withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));

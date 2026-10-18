@@ -636,12 +636,18 @@
           <div class="a"><p>Then the run is over and you lose. Type <code>/farout start</code> to start again.</p></div>
         </details>
         <details>
+          <summary>Is what I built on my last run still there?</summary>
+          <div class="a"><p>No. Every run gets a fresh copy of your world, generated from its seed when the run starts and deleted when the run ends. No bridges or pillars left over from last time, no looted chests. Same seed, same direction, same course.</p>
+            <p>When a run ends, Farout asks if you want to save the seed. Saved seeds are listed in the settings screen, with every direction you've run them in, and you can copy one to paste into Create New World.</p></div>
+        </details>
+        <details>
           <summary>What are the commands I can use?</summary>
           <div class="a"><ul>
               <li><code>/farout start</code> lifts you above the start area for Airtime, then drops you in to pick a lane.</li>
               <li><code>/farout start north</code> (or <code>east</code>, <code>south</code>, <code>west</code>) skips the start area and starts the run straight from spawn.</li>
               <li><code>/farout stop</code> gives up the run, clears your inventory and takes you back to the start area.</li>
               <li><code>/farout settings</code> shows the current settings, and <code>/farout settings &lt;name&gt; &lt;value&gt;</code> changes one. Changes apply from your next run.</li>
+              <li><code>/farout menu</code> opens the settings screen, with your saved seeds.</li>
             </ul></div>
         </details>
         <details>
@@ -650,7 +656,7 @@
         </details>
         <details>
           <summary>What settings does this mod have?</summary>
-          <div class="a"><p>Four, changed with <code>/farout settings &lt;name&gt; &lt;value&gt;</code> or by editing <code>config/farout/settings.properties</code>. They apply from your next run.</p>
+          <div class="a"><p>Four, changed in the settings screen (Mod Menu's Configure button, or <code>/farout menu</code>), with <code>/farout settings &lt;name&gt; &lt;value&gt;</code>, or by editing <code>config/farout/settings.properties</code>. They apply from your next run.</p>
             <ul>
               <li><code>pathWidth</code>: how wide the lane is, in blocks. Default 7.</li>
               <li><code>leewayBlocks</code>: how many blocks you may walk outside the lane per run. Default 200.</li>

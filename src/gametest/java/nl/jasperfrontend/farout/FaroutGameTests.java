@@ -8,6 +8,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -20,6 +21,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.MixinEnvironment;
+import xyz.nucleoid.fantasy.RuntimeLevelHandle;
 
 /**
  * Run on a real dedicated server by .\gradlew runGameTest. Booting at all proves the mod loads: its
@@ -93,6 +95,36 @@ public class FaroutGameTests {
 		check(helper, !outside.isRemoved(), "cow outside the hub was removed too");
 		outside.discard();
 		helper.succeed();
+	}
+
+	/**
+	 * A run world has the overworld's terrain as generated, without anything changed in the overworld since,
+	 * and it's gone once deleted.
+	 */
+	@GameTest(maxTicks = 200)
+	public void runWorldCopiesTheOverworld(GameTestHelper helper) {
+		MinecraftServer server = helper.getLevel().getServer();
+		ServerLevel overworld = server.overworld();
+		// Far from the test structures, so the overworld here is still as generated.
+		BlockPos column = new BlockPos(3000, 0, -3000);
+		overworld.getChunk(column);
+		BlockPos changed = column.atY(overworld.getMaxY() - 1);
+		overworld.setBlock(changed, Blocks.GOLD_BLOCK.defaultBlockState(), Block.UPDATE_CLIENTS);
+
+		RuntimeLevelHandle handle = RunWorlds.create(server);
+		ServerLevel copy = handle.asLevel();
+		check(helper, copy.getSeed() == overworld.getSeed(), "run world seed " + copy.getSeed() + " is not the overworld's");
+		copy.getChunk(column);
+		for (int y = overworld.getMinY(); y < overworld.getMaxY() - 1; y++) {
+			BlockPos pos = column.atY(y);
+			check(helper, copy.getBlockState(pos).equals(overworld.getBlockState(pos)),
+				"run world differs at " + pos + ": " + copy.getBlockState(pos) + ", overworld has " + overworld.getBlockState(pos));
+		}
+		check(helper, !copy.getBlockState(changed).is(Blocks.GOLD_BLOCK), "a block placed in the overworld showed up in the run world");
+		overworld.setBlock(changed, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+
+		handle.delete();
+		helper.succeedWhen(() -> check(helper, server.getLevel(copy.dimension()) == null, "run world still loaded after delete"));
 	}
 
 	private static Entity cow(ServerLevel level, BlockPos pos) {

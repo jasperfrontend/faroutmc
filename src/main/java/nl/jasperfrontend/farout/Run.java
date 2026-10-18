@@ -1,12 +1,15 @@
 package nl.jasperfrontend.farout;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.ArrayList;
 import java.util.List;
 
 final class Run {
 	final Heading heading;
+	/** The run's own copy of the overworld, see {@link RunWorlds}. */
+	final ServerLevel level;
 	final BlockPos origin;
 	final Lane lane;
 	/** Split ticks of the personal best for this direction, or null if there is none yet. */
@@ -16,8 +19,9 @@ final class Run {
 	long ticks;
 	int nextSplit = Farout.SPLIT_INTERVAL;
 
-	Run(Heading heading, BlockPos origin, Lane lane, long[] pb) {
+	Run(Heading heading, ServerLevel level, BlockPos origin, Lane lane, long[] pb) {
 		this.heading = heading;
+		this.level = level;
 		this.origin = origin;
 		this.lane = lane;
 		this.pb = pb;

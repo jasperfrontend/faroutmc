@@ -1,6 +1,7 @@
 package nl.jasperfrontend.farout.client;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -12,7 +13,9 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import nl.jasperfrontend.farout.Farout;
 import nl.jasperfrontend.farout.LanePayload;
+import nl.jasperfrontend.farout.OpenMenuPayload;
 import nl.jasperfrontend.farout.RunStatePayload;
+import nl.jasperfrontend.farout.SeedOfferPayload;
 
 public class FaroutClient implements ClientModInitializer {
 	// Vanilla draws the action bar text at guiHeight - 72. The compass sits just above it,
@@ -29,9 +32,14 @@ public class FaroutClient implements ClientModInitializer {
 		ClientPlayNetworking.registerGlobalReceiver(RunStatePayload.TYPE,
 			(payload, context) -> runActive = payload.active());
 		ClientPlayNetworking.registerGlobalReceiver(LanePayload.TYPE, (payload, context) -> LaneFog.set(payload));
+		ClientPlayNetworking.registerGlobalReceiver(SeedOfferPayload.TYPE, (payload, context) -> SeedPrompt.offer(payload));
+		ClientPlayNetworking.registerGlobalReceiver(OpenMenuPayload.TYPE,
+			(payload, context) -> context.client().setScreen(new FaroutSettingsScreen(null)));
+		ClientTickEvents.END_CLIENT_TICK.register(SeedPrompt::tick);
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
 			runActive = false;
 			LaneFog.set(LanePayload.NONE);
+			SeedPrompt.clear();
 		});
 		BoatStraightener.register();
 
