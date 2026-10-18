@@ -5,7 +5,7 @@
 - Every run now happens in a fresh copy of your world, made from its seed and deleted when the run ends. Whatever you built, broke or looted on one run is gone on the next, so the same seed and direction is always the same course.
 - When a run ends, Farout asks if you want to save the seed. Saved seeds keep every direction you've run them in, with no limit on how many.
 - New settings screen with the four settings and your saved seeds: Mod Menu's Configure button, or `/farout menu`.
-- Finishing a run takes you back to the start area after 5 seconds.
+- Finishing a run takes you back to the start area after 5 seconds. You have to leave the run's world because it gets deleted, and the 5 seconds give you time to take in the finish, your time and your splits first.
 
 ## 1.0.20 - 2026-10-18
 
