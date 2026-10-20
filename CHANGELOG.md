@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.23 - 2026-10-20
+
+- Personal bests and splits are now kept per direction and per seed. Your splits only compare you against a run over the same terrain, so a seed with three mountain ranges in a row is no longer measured against one with a 30,000-block ocean.
+- Starting a run tells you when there's no personal best yet for that direction on that seed.
+- Personal bests from earlier versions weren't tied to a seed, so they no longer count. Your first finish on each seed and direction sets a new one.
+
 ## 1.0.22 - 2026-10-18
 
 Farout no longer touches your own world, so it's safe to try in a survival world you care about.

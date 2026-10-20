@@ -12,8 +12,10 @@ import java.util.List;
 import java.util.Properties;
 
 /**
- * Split times of the best finished run per direction, in config/farout/personal-bests.properties.
+ * Split times of the best finished run per direction and seed, in config/farout/personal-bests.properties.
+ * Per seed because terrain makes or breaks a run: a PB set across an ocean says nothing about a mountain range.
  * Keyed by target and split interval too, so test runs (runClientShort) never mix with real ones.
+ * Keys from before 1.0.23 have no seed; they stay in the file but are no longer read.
  */
 final class PersonalBests {
 	private PersonalBests() {
@@ -23,27 +25,27 @@ final class PersonalBests {
 		return FabricLoader.getInstance().getConfigDir().resolve("farout").resolve("personal-bests.properties");
 	}
 
-	private static String key(Heading heading) {
-		return heading.id() + "." + Farout.TARGET + "." + Farout.SPLIT_INTERVAL;
+	private static String key(Heading heading, long seed) {
+		return heading.id() + "." + seed + "." + Farout.TARGET + "." + Farout.SPLIT_INTERVAL;
 	}
 
 	/** Split ticks of the personal best (the last entry is the finish), or null if there is none. */
-	static long[] load(Heading heading) {
-		String value = read().getProperty(key(heading));
+	static long[] load(Heading heading, long seed) {
+		String value = read().getProperty(key(heading, seed));
 		if (value == null || value.isBlank()) {
 			return null;
 		}
 		try {
 			return Arrays.stream(value.split(",")).mapToLong(Long::parseLong).toArray();
 		} catch (NumberFormatException e) {
-			Farout.LOGGER.warn("Ignoring malformed personal best for {}: {}", key(heading), value);
+			Farout.LOGGER.warn("Ignoring malformed personal best for {}: {}", key(heading, seed), value);
 			return null;
 		}
 	}
 
-	static void save(Heading heading, List<Long> splits) throws IOException {
+	static void save(Heading heading, long seed, List<Long> splits) throws IOException {
 		Properties props = read();
-		props.setProperty(key(heading), String.join(",", splits.stream().map(String::valueOf).toList()));
+		props.setProperty(key(heading, seed), String.join(",", splits.stream().map(String::valueOf).toList()));
 		Path file = file();
 		Files.createDirectories(file.getParent());
 		try (Writer writer = Files.newBufferedWriter(file)) {

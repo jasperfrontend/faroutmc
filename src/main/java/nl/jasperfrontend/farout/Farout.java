@@ -283,7 +283,8 @@ public class Farout implements ModInitializer {
 
 		Settings settings = Settings.load();
 		Lane lane = new Lane(heading, laneCentre, settings.pathWidth, settings.leewayBlocks, player);
-		RUNS.put(player.getUUID(), new Run(heading, player.level(), origin, lane, PersonalBests.load(heading)));
+		long[] pb = PersonalBests.load(heading, player.level().getSeed());
+		RUNS.put(player.getUUID(), new Run(heading, player.level(), origin, lane, pb));
 		sendRunState(player, true);
 		if (ServerPlayNetworking.canSend(player, LanePayload.TYPE)) {
 			ServerPlayNetworking.send(player, lane.payload());
@@ -292,6 +293,10 @@ public class Farout implements ModInitializer {
 		player.sendSystemMessage(Component.literal(
 			"Farout started: head " + heading.label + " for " + Format.blocks(TARGET) + " blocks. Stay in the "
 				+ settings.pathWidth + "-wide lane; " + Format.blocks(settings.leewayBlocks) + " blocks of leeway."));
+		if (pb == null) {
+			player.sendSystemMessage(Component.literal("No personal best for " + heading.label + " on this seed yet.")
+				.withStyle(ChatFormatting.GRAY));
+		}
 	}
 
 	/** Everything back to how a new player spawns into a new world, so nothing carries over between runs. */
@@ -552,7 +557,7 @@ public class Farout implements ModInitializer {
 			player.sendSystemMessage(Component.literal("New personal best!")
 				.withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
 			try {
-				PersonalBests.save(run.heading, run.splits);
+				PersonalBests.save(run.heading, run.level.getSeed(), run.splits);
 			} catch (IOException e) {
 				LOGGER.error("Could not write personal bests", e);
 				player.sendSystemMessage(Component.literal("Could not save personal best: " + e.getMessage())

@@ -12,7 +12,7 @@ final class Run {
 	final ServerLevel level;
 	final BlockPos origin;
 	final Lane lane;
-	/** Split ticks of the personal best for this direction, or null if there is none yet. */
+	/** Split ticks of the personal best for this direction and seed, or null if there is none yet. */
 	final long[] pb;
 	/** Split ticks of this run so far; the finish is added as the last entry. */
 	final List<Long> splits = new ArrayList<>();
