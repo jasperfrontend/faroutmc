@@ -5,6 +5,9 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.events.ContainerEventHandler;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
@@ -21,11 +24,13 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 import nl.jasperfrontend.farout.client.FaroutSettingsScreen;
+import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -39,8 +44,12 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 	@Override
 	public void runTest(ClientGameTestContext context) {
 		Path saved = FabricLoader.getInstance().getConfigDir().resolve("farout").resolve("saved-seeds.json");
+		Path results = FabricLoader.getInstance().getConfigDir().resolve("farout").resolve("results.csv");
 		try {
 			Files.deleteIfExists(saved);
+			// A results.csv from before 1.0.24, which the finish below has to migrate.
+			Files.createDirectories(results.getParent());
+			Files.write(results, List.of("date,direction,time,seed", "2026-10-17T20:00:00,north,08:12.4," + SEED));
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
@@ -167,6 +176,11 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 			context.waitTicks(10);
 			check(context.computeOnClient(minecraft -> minecraft.screen) == null, "a prompt showed for an already saved seed");
 			check(read(saved).contains("east"), "East wasn't added to the saved seed: " + read(saved));
+			List<String> csv = read(results).lines().toList();
+			check(csv.size() == 3 && csv.get(0).equals("date,direction,time,seed,start")
+				&& csv.get(1).equals("2026-10-17T20:00:00,north,08:12.4," + SEED + ",")
+				&& csv.get(2).matches(".*,east,.*," + SEED + ",-?\\d+ -?\\d+ -?\\d+"),
+				"results.csv after finishing: " + csv);
 			server.runOnServer(s -> {
 				assertHome(s, home, spawn, "finishing");
 				check(s.levelKeys().stream().noneMatch(RunWorlds::isRunWorld), "a run world is still loaded");
@@ -196,14 +210,59 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 			context.waitTicks(5);
 			server.runOnServer(s -> assertHome(s, home, spawn, "/farout stop in the hub"));
 
+			// /farout here, a way off from spawn: the start area is built where they stand, in the run world.
+			server.runCommand("farout settings airtimeHeight 0");
+			Vec3 lookout = server.computeOnServer(s -> {
+				ServerPlayer player = player(s);
+				BlockPos pos = SpawnHub.centre(s.overworld(), spawn.offset(300, 0, 0));
+				player.teleportTo(s.overworld(), pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, Set.of(), 0f, 0f, true);
+				return player.position();
+			});
+			context.waitTicks(5);
+			server.runCommand("execute as @a run farout here");
+			context.waitFor(minecraft -> minecraft.level != null && RunWorlds.isRunWorld(minecraft.level.dimension())
+				&& minecraft.screen == null);
+			context.waitTicks(40);
+			context.takeScreenshot("farout-5c-here");
+			server.runOnServer(s -> {
+				ServerPlayer player = player(s);
+				BlockPos centre = SpawnHub.centre(player.level(), BlockPos.containing(lookout));
+				check(RunWorlds.isRunWorld(player.level().dimension()) && SpawnHub.inCentre(centre, player.blockPosition()),
+					"/farout here didn't put them in a start area where they stood: " + player.blockPosition());
+				check(player.level().getBlockState(centre.offset(0, 0, -4)).is(Blocks.PURPLE_CARPET),
+					"no start area where /farout here was typed");
+				assertHomeUntouched(s, spawn);
+			});
+			server.runCommand("execute as @a run farout stop");
+			context.waitFor(minecraft -> !RunWorlds.isRunWorld(minecraft.level.dimension()));
+			context.waitTicks(5);
+			server.runOnServer(s -> {
+				ServerPlayer player = player(s);
+				check(player.level() == s.overworld() && player.position().distanceTo(lookout) < 1,
+					"not back where /farout here was typed: " + player.position());
+			});
+
 			server.runCommand("execute as @a run farout menu");
 			context.waitForScreen(FaroutSettingsScreen.class);
 			context.takeScreenshot("farout-6-settings");
 			context.getInput().setCursorPos(context.computeOnClient(m -> m.getWindow().getScreenWidth() / 2.0),
 				context.computeOnClient(m -> m.getWindow().getScreenHeight() / 2.0));
-			context.getInput().scroll(-10);
+			context.getInput().scroll(-50);
 			context.waitTicks(2);
-			context.takeScreenshot("farout-7-saved-seeds");
+			context.takeScreenshot("farout-7-saved-seeds-and-runs");
+			// The button sits in a list row, where clickScreenButton can't see it: click it with the mouse.
+			double[] at = context.computeOnClient(minecraft -> {
+				Button button = findButton(minecraft.screen, "Copy /tp");
+				check(button != null, "no Copy /tp button in the menu");
+				double scale = minecraft.getWindow().getGuiScale();
+				return new double[] {(button.getX() + button.getWidth() / 2.0) * scale,
+					(button.getY() + button.getHeight() / 2.0) * scale};
+			});
+			context.getInput().setCursorPos(at[0], at[1]);
+			context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+			context.waitTicks(2);
+			String clipboard = context.computeOnClient(minecraft -> minecraft.keyboardHandler.getClipboard());
+			check(clipboard.matches("/tp -?\\d+ -?\\d+ -?\\d+"), "Copy /tp copied " + clipboard);
 			context.clickScreenButton("gui.cancel");
 		}
 	}
@@ -225,6 +284,22 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 		check(!overworld.getBlockState(spawn.offset(0, 0, -4)).is(Blocks.PURPLE_CARPET), "a hub was built at the real spawn");
 		check(!overworld.getEntitiesOfClass(ArmorStand.class, new net.minecraft.world.phys.AABB(spawn).inflate(8),
 			e -> e.entityTags().contains("farout_test_stand")).isEmpty(), "the armour stand at the real spawn was removed");
+	}
+
+	/** The button with this label anywhere on screen, rows of a list included; null if there's none. */
+	private static Button findButton(GuiEventListener widget, String label) {
+		if (widget instanceof Button button && button.getMessage().getString().equals(label)) {
+			return button;
+		}
+		if (widget instanceof ContainerEventHandler container) {
+			for (GuiEventListener child : container.children()) {
+				Button found = findButton(child, label);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	private static String read(Path file) {

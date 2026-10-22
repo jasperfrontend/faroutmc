@@ -14,6 +14,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import nl.jasperfrontend.farout.Farout;
+import nl.jasperfrontend.farout.ResultsLog;
 import nl.jasperfrontend.farout.Settings;
 
 import java.io.IOException;
@@ -22,14 +23,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Farout's settings and saved seeds, from Mod Menu's Configure button or /farout menu. The settings are
- * the same file /farout settings writes, so they count for worlds played on this computer.
+ * Farout's settings, saved seeds and finished runs, from Mod Menu's Configure button or /farout menu. The
+ * settings are the same file /farout settings writes, so they count for worlds played on this computer, and
+ * the finished runs are results.csv, from those same worlds.
  */
 public class FaroutSettingsScreen extends Screen {
 	private static final int ROW_HEIGHT = 24;
 	private static final int ROW_WIDTH = 310;
 	private static final int FIELD_WIDTH = 80;
 	private static final int BUTTON_WIDTH = 50;
+	private static final int TP_BUTTON_WIDTH = 60;
 	private static final int TEXT = 0xFFFFFFFF;
 	private static final int MUTED = 0xFFA0A0A0;
 	private static final int INVALID = 0xFFFF5555;
@@ -120,11 +123,11 @@ public class FaroutSettingsScreen extends Screen {
 				addEntry(new SettingRow(name, settings.get(name)));
 			}
 			addEntry(new TextRow(Component.literal("They apply from your next run, in worlds on this computer."), MUTED));
-			refreshSeeds();
+			refreshLists();
 		}
 
-		/** Rebuilds everything below the settings, newest seed first. */
-		void refreshSeeds() {
+		/** Rebuilds everything below the settings: saved seeds, then finished runs, newest first. */
+		void refreshLists() {
 			removeEntries(List.copyOf(children().subList(Settings.NAMES.length + 2, children().size())));
 			List<SavedSeeds.Entry> seeds = SavedSeeds.load();
 			addEntry(new TextRow(Component.literal("Saved seeds (" + seeds.size() + ")").withStyle(ChatFormatting.BOLD), TEXT));
@@ -133,6 +136,15 @@ public class FaroutSettingsScreen extends Screen {
 			}
 			for (int i = seeds.size() - 1; i >= 0; i--) {
 				addEntry(new SeedRow(seeds.get(i)));
+			}
+
+			List<ResultsLog.Result> results = ResultsLog.load();
+			addEntry(new TextRow(Component.literal("Finished runs (" + results.size() + ")").withStyle(ChatFormatting.BOLD), TEXT));
+			if (results.isEmpty()) {
+				addEntry(new TextRow(Component.literal("None yet. Every run you finish is listed here."), MUTED));
+			}
+			for (int i = results.size() - 1; i >= 0; i--) {
+				addEntry(new ResultRow(results.get(i)));
 			}
 		}
 
@@ -229,7 +241,7 @@ public class FaroutSettingsScreen extends Screen {
 				} catch (IOException e) {
 					Farout.LOGGER.error("Could not write saved seeds", e);
 				}
-				rows.refreshSeeds();
+				rows.refreshLists();
 			}).size(BUTTON_WIDTH, 20).build();
 		}
 
@@ -253,6 +265,52 @@ public class FaroutSettingsScreen extends Screen {
 		@Override
 		public List<? extends NarratableEntry> narratables() {
 			return List.of(copy, delete);
+		}
+	}
+
+	/** A finished run, with a button to copy a /tp to where it started; runs from before 1.0.24 have no start. */
+	private class ResultRow extends Row {
+		private final Component run;
+		private final Component start;
+		private final Button copy;
+
+		ResultRow(ResultsLog.Result result) {
+			String day = result.date().length() >= 10 ? result.date().substring(0, 10) : result.date();
+			run = Component.literal(SeedPrompt.label(result.direction()) + " · " + result.time() + " · " + day);
+			start = Component.literal((result.start().isEmpty() ? "Start not recorded" : result.start())
+				+ " · seed " + result.seed());
+			if (result.start().isEmpty()) {
+				copy = null;
+				return;
+			}
+			String tp = "/tp " + result.start();
+			copy = Button.builder(Component.literal("Copy /tp"), button -> {
+				minecraft.keyboardHandler.setClipboard(tp);
+				button.setMessage(Component.literal("Copied"));
+			}).size(TP_BUTTON_WIDTH, 20).tooltip(Tooltip.create(Component.literal("Copy " + tp + ", to paste into chat. "
+				+ "Then /farout here runs this course again. /tp needs cheats on."))).build();
+		}
+
+		@Override
+		public void extractContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, boolean hovered, float a) {
+			int x = getContentX();
+			int y = getContentY();
+			graphics.text(font, run, x, y + 1, TEXT, false);
+			graphics.text(font, start, x, y + 1 + font.lineHeight + 1, MUTED, false);
+			if (copy != null) {
+				copy.setPosition(getContentRight() - TP_BUTTON_WIDTH, y);
+				copy.extractRenderState(graphics, mouseX, mouseY, a);
+			}
+		}
+
+		@Override
+		public List<? extends GuiEventListener> children() {
+			return copy == null ? List.of() : List.of(copy);
+		}
+
+		@Override
+		public List<? extends NarratableEntry> narratables() {
+			return copy == null ? List.of() : List.of(copy);
 		}
 	}
 }

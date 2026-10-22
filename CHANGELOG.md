@@ -1,8 +1,15 @@
 # Changelog
 
+## 1.0.24 - 2026-10-22
+
+- New command `/farout here`: the start area is built where you're standing instead of at spawn, in the run's copy of your world. Found a beautiful spot? Start your next run from there. It works in the overworld and during a session (before the run starts, or in the few seconds after a finish), not in the Nether or the End.
+- Runs from `/farout here` keep their own personal bests per spot, so they're never compared against your runs from spawn.
+- The settings screen (`/farout menu`) now lists every run you've finished, newest first, with its time, date, seed and the coordinates it started from. **Copy /tp** puts a `/tp` to that start on your clipboard: paste it into chat, then type `/farout here` to run the same course again. `/tp` needs cheats on.
+- `results.csv` has a new `start` column with those coordinates. Your existing file is updated once, the first time Farout reads or writes it; runs from before this version keep an empty `start`, since it wasn't recorded then.
+
 ## 1.0.23 - 2026-10-20
 
-- Personal bests and splits are now kept per direction and per seed. Your splits only compare you against a run over the same terrain, so a seed with three mountain ranges in a row is no longer measured against one with a 30,000-block ocean.
+- Personal bests and splits are now kept per direction and per seed. Your splits only compare you against a run over the same terrain, so a seed with three mountain ranges in a row is no longer measured against one with a 3,000-block ocean.
 - Starting a run tells you when there's no personal best yet for that direction on that seed.
 - Personal bests from earlier versions weren't tied to a seed, so they no longer count. Your first finish on each seed and direction sets a new one.
 

@@ -19,7 +19,7 @@ import net.minecraft.world.phys.AABB;
 import java.util.Locale;
 
 /**
- * The start area at world spawn: a plus-shaped hub with a lane per direction. A purple carpet line
+ * The start area at world spawn (or wherever /farout here was typed): a plus-shaped hub with a lane per direction. A purple carpet line
  * where each lane leaves the centre square is the portal; stepping onto it commits to that direction.
  *
  * <pre>

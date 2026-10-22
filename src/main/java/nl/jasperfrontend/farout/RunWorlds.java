@@ -22,7 +22,8 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Every session, from /farout start to coming home, happens in its own temporary copy of the overworld:
- * same seed, same generator, so the same terrain, with the start area built at its spawn. The copy is
+ * same seed, same generator, so the same terrain, with the start area built at its spawn (or where
+ * /farout here was typed). The copy is
  * deleted when the run ends, so nothing built, broken or looted on one run is still there on the next,
  * and the player's own world is never touched. Fantasy deletes any copy still open when the server stops.
  */

@@ -24,12 +24,14 @@ import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,7 +74,7 @@ public class Farout implements ModInitializer {
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			LiteralArgumentBuilder<CommandSourceStack> start = Commands.literal("start")
-				.executes(ctx -> enterHub(ctx.getSource().getPlayerOrException()));
+				.executes(ctx -> enterHub(ctx.getSource().getPlayerOrException(), null));
 			for (Heading heading : Heading.values()) {
 				start.then(Commands.literal(heading.id())
 					.executes(ctx -> start(ctx.getSource().getPlayerOrException(), heading)));
@@ -88,6 +90,8 @@ public class Farout implements ModInitializer {
 			dispatcher.register(Commands.literal("farout")
 				.then(start)
 				.then(settings)
+				.then(Commands.literal("here")
+					.executes(ctx -> here(ctx.getSource().getPlayerOrException())))
 				.then(Commands.literal("menu")
 					.executes(ctx -> openMenu(ctx.getSource().getPlayerOrException())))
 				.then(Commands.literal("stop")
@@ -178,11 +182,26 @@ public class Farout implements ModInitializer {
 	}
 
 	/**
-	 * /farout start: stash the player, open a fresh copy of the world with the start area at its spawn, and
-	 * drop them into its centre to pick a lane, after a few seconds of airtime high above it to scout the
-	 * directions. Nothing of this touches the player's own world.
+	 * /farout here: the start area where the player stands instead of at spawn. The run's copy of the world is
+	 * generated from the seed, so the ground there is the same as in the overworld or any run world, but not
+	 * in the Nether or the End.
 	 */
-	private static int enterHub(ServerPlayer player) {
+	private static int here(ServerPlayer player) {
+		ResourceKey<Level> dimension = player.level().dimension();
+		if (dimension != Level.OVERWORLD && !RunWorlds.isRunWorld(dimension)) {
+			player.sendSystemMessage(Component.literal("Runs happen in a copy of the overworld, so /farout here only works there.")
+				.withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		return enterHub(player, player.blockPosition());
+	}
+
+	/**
+	 * /farout start: stash the player, open a fresh copy of the world with the start area at its spawn (or at
+	 * spot, for /farout here), and drop them into its centre to pick a lane, after a few seconds of airtime
+	 * high above it to scout the directions. Nothing of this touches the player's own world.
+	 */
+	private static int enterHub(ServerPlayer player, BlockPos spot) {
 		if (RUNS.containsKey(player.getUUID())) {
 			player.sendSystemMessage(Component.literal("A run is already active. Use /farout stop first.")
 				.withStyle(ChatFormatting.RED));
@@ -194,7 +213,7 @@ public class Farout implements ModInitializer {
 		// Starting again from the hub or right after a finish keeps the stash from the first start.
 		Stash.save(player);
 		ServerLevel level = RunWorlds.open(player);
-		BlockPos centre = SpawnHub.centre(level, level.getServer().overworld().getRespawnData().pos());
+		BlockPos centre = SpawnHub.centre(level, spot != null ? spot : level.getServer().overworld().getRespawnData().pos());
 		SpawnHub.build(level, centre);
 		SpawnHub.clearEntities(level, centre);
 		SpawnHub.labels(level, centre);
@@ -232,7 +251,7 @@ public class Farout implements ModInitializer {
 		leaveHub(player);
 		Stash.save(player);
 		BlockPos origin = teleportToSpawn(player, RunWorlds.open(player), heading.yaw);
-		beginRun(player, heading, origin, heading.lateral(origin));
+		beginRun(player, heading, origin, heading.lateral(origin), null);
 		return 1;
 	}
 
@@ -270,8 +289,11 @@ public class Farout implements ModInitializer {
 		return 1;
 	}
 
-	/** laneCentre: the sideways block coordinate the lane is centred on. */
-	private static void beginRun(ServerPlayer player, Heading heading, BlockPos origin, int laneCentre) {
+	/**
+	 * laneCentre: the sideways block coordinate the lane is centred on. hub: the start area's centre, or null
+	 * for /farout start &lt;direction&gt;, which has none.
+	 */
+	private static void beginRun(ServerPlayer player, Heading heading, BlockPos origin, int laneCentre, BlockPos hub) {
 		// Start like a brand-new world: a freshly spawned player, clear skies, at the time a new world begins.
 		// The time is the run world's own clock; weather is one for the whole server, so that clears at home too.
 		HUBS.remove(player.getUUID());
@@ -283,8 +305,10 @@ public class Farout implements ModInitializer {
 
 		Settings settings = Settings.load();
 		Lane lane = new Lane(heading, laneCentre, settings.pathWidth, settings.leewayBlocks, player);
-		long[] pb = PersonalBests.load(heading, player.level().getSeed());
-		RUNS.put(player.getUUID(), new Run(heading, player.level(), origin, lane, pb));
+		// A start area away from spawn is from /farout here, and that course keeps its own personal bests.
+		BlockPos spot = hub != null ? spot(server, hub) : null;
+		long[] pb = PersonalBests.load(heading, player.level().getSeed(), spot);
+		RUNS.put(player.getUUID(), new Run(heading, player.level(), origin, hub != null ? hub : origin, spot, lane, pb));
 		sendRunState(player, true);
 		if (ServerPlayNetworking.canSend(player, LanePayload.TYPE)) {
 			ServerPlayNetworking.send(player, lane.payload());
@@ -294,8 +318,8 @@ public class Farout implements ModInitializer {
 			"Farout started: head " + heading.label + " for " + Format.blocks(TARGET) + " blocks. Stay in the "
 				+ settings.pathWidth + "-wide lane; " + Format.blocks(settings.leewayBlocks) + " blocks of leeway."));
 		if (pb == null) {
-			player.sendSystemMessage(Component.literal("No personal best for " + heading.label + " on this seed yet.")
-				.withStyle(ChatFormatting.GRAY));
+			player.sendSystemMessage(Component.literal("No personal best for " + heading.label
+				+ (spot != null ? " from this spot" : "") + " on this seed yet.").withStyle(ChatFormatting.GRAY));
 		}
 	}
 
@@ -507,7 +531,7 @@ public class Farout implements ModInitializer {
 				it.remove();
 				// The run counts from the portal line, so the timer and splits start right here.
 				// The lane runs down the middle of the hub lane they walked into, wherever they crossed the portal.
-				beginRun(player, heading, player.blockPosition(), heading.lateral(centre));
+				beginRun(player, heading, player.blockPosition(), heading.lateral(centre), centre);
 				player.connection.send(new ClientboundSetTitlesAnimationPacket(5, 30, 10));
 				player.connection.send(new ClientboundSetSubtitleTextPacket(Component.empty()));
 				player.connection.send(new ClientboundSetTitleTextPacket(
@@ -523,6 +547,12 @@ public class Farout implements ModInitializer {
 				player.sendOverlayMessage(Component.literal("Walk through a portal to start"));
 			}
 		}
+	}
+
+	/** The hub centre if it's a /farout here one, or null if it's at spawn: a here at spawn is the same course. */
+	private static BlockPos spot(MinecraftServer server, BlockPos centre) {
+		BlockPos spawn = server.overworld().getRespawnData().pos();
+		return centre.getX() == spawn.getX() && centre.getZ() == spawn.getZ() ? null : centre;
 	}
 
 	private static String counter(int progress, long ticks) {
@@ -557,7 +587,7 @@ public class Farout implements ModInitializer {
 			player.sendSystemMessage(Component.literal("New personal best!")
 				.withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
 			try {
-				PersonalBests.save(run.heading, run.level.getSeed(), run.splits);
+				PersonalBests.save(run.heading, run.level.getSeed(), run.spot, run.splits);
 			} catch (IOException e) {
 				LOGGER.error("Could not write personal bests", e);
 				player.sendSystemMessage(Component.literal("Could not save personal best: " + e.getMessage())
@@ -571,7 +601,7 @@ public class Farout implements ModInitializer {
 			player.getRandom().nextLong()));
 
 		try {
-			ResultsLog.append(run.heading, run.ticks, server.overworld().getSeed());
+			ResultsLog.append(run.heading, run.ticks, server.overworld().getSeed(), run.start);
 		} catch (IOException e) {
 			LOGGER.error("Could not write results.csv", e);
 			player.sendSystemMessage(Component.literal("Could not write results.csv: " + e.getMessage())

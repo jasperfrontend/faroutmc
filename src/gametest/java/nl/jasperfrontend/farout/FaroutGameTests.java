@@ -23,6 +23,12 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.MixinEnvironment;
 import xyz.nucleoid.fantasy.RuntimeLevelHandle;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
 /**
  * Run on a real dedicated server by .\gradlew runGameTest. Booting at all proves the mod loads: its
  * registries, recipe serializer and datapack JSON. The tests below check what that can't.
@@ -47,6 +53,30 @@ public class FaroutGameTests {
 				Identifier.fromNamespaceAndPath(Farout.MOD_ID, id));
 			check(helper, helper.getLevel().getServer().getRecipeManager().byKey(key).isPresent(),
 				"recipe farout:" + id + " is not loaded");
+		}
+		helper.succeed();
+	}
+
+	/** A results.csv from before 1.0.24 gets the start column once, and keeps its runs; new runs record their start. */
+	@GameTest
+	public void resultsLogMigrates(GameTestHelper helper) {
+		try {
+			Path file = Files.createTempDirectory("farout").resolve("results.csv");
+			Files.writeString(file, "date,direction,time,seed\n2026-10-17T20:00:00,north,08:12.4,8675309\n");
+			ResultsLog.append(file, Heading.EAST, 9000, 42, new BlockPos(300, 64, -12));
+			ResultsLog.append(file, Heading.WEST, 9100, 42, new BlockPos(-5, 70, 8));
+
+			List<String> lines = Files.readAllLines(file);
+			check(helper, lines.size() == 4 && lines.getFirst().equals("date,direction,time,seed,start"),
+				"results.csv after migrating: " + lines);
+			List<ResultsLog.Result> results = ResultsLog.load(file);
+			check(helper, results.size() == 3, "read back " + results.size() + " runs: " + results);
+			check(helper, results.get(0).direction().equals("north") && results.get(0).start().isEmpty(),
+				"old run after migrating: " + results.get(0));
+			check(helper, results.get(1).start().equals("300 64 -12") && results.get(2).start().equals("-5 70 8"),
+				"starts read back as " + results.get(1).start() + " and " + results.get(2).start());
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
 		}
 		helper.succeed();
 	}
