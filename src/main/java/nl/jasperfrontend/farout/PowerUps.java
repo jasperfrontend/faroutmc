@@ -285,7 +285,7 @@ public final class PowerUps {
 		return InteractionResult.SUCCESS;
 	}
 
-	private static void openCoffeeWindow(ServerPlayer player) {
+	static void openCoffeeWindow(ServerPlayer player) {
 		Countdown old = COFFEE_WINDOW.put(player.getUUID(), new Countdown(player, "Coffee time",
 			Power.MORNING_COFFEE.colour, Power.MORNING_COFFEE.barColour, COFFEE_WINDOW_TICKS));
 		if (old != null) {

@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.gamerules.GameRules;
 import xyz.nucleoid.fantasy.Fantasy;
 import xyz.nucleoid.fantasy.RuntimeLevelConfig;
 import xyz.nucleoid.fantasy.RuntimeLevelHandle;
@@ -65,6 +66,8 @@ public final class RunWorlds {
 	/**
 	 * A temporary world generated exactly like the overworld, with its game rules and difficulty. It keeps
 	 * its own clock, starting at sunrise, so a run never changes the time in the player's own world.
+	 * Fantasy only ticks that clock when told to; left still, the server keeps it at sunrise while the
+	 * client's sky runs on into the night, and beds there never work.
 	 */
 	static RuntimeLevelHandle create(MinecraftServer server) {
 		ServerLevel overworld = server.overworld();
@@ -74,7 +77,10 @@ public final class RunWorlds {
 			.setDimensionType(overworld.dimensionTypeRegistration())
 			.setMirrorOverworldGameRules(true)
 			.setMirrorOverworldDifficulty(true)
-			.setClockTime(WorldClocks.OVERWORLD, 0);
+			.setClockTime(WorldClocks.OVERWORLD, 0)
+			.setShouldTickTime(true)
+			// setShouldTickTime turns advance_time on in here; keep it as the player has it in their own world.
+			.setGameRule(GameRules.ADVANCE_TIME, overworld.getGameRules().get(GameRules.ADVANCE_TIME));
 		// Random, so a new run never collides with the last one's world while that's still being deleted.
 		String key = PREFIX + Long.toHexString(ThreadLocalRandom.current().nextLong()).toLowerCase(Locale.ROOT);
 		return Fantasy.get(server).openTemporaryLevel(Identifier.fromNamespaceAndPath(Farout.MOD_ID, key), config);

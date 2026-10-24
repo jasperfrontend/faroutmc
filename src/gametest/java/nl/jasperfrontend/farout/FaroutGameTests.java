@@ -3,6 +3,7 @@ package nl.jasperfrontend.farout;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
@@ -10,10 +11,16 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.clock.WorldClock;
+import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.CraftingMenu;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
@@ -155,6 +162,46 @@ public class FaroutGameTests {
 
 		handle.delete();
 		helper.succeedWhen(() -> check(helper, server.getLevel(copy.dimension()) == null, "run world still loaded after delete"));
+	}
+
+	/** A run world's clock runs on the server, not just in the client's sky, so beds work there at night. */
+	@GameTest(maxTicks = 100)
+	public void runWorldClockRuns(GameTestHelper helper) {
+		MinecraftServer server = helper.getLevel().getServer();
+		RuntimeLevelHandle handle = RunWorlds.create(server);
+		ServerLevel copy = handle.asLevel();
+		Holder<WorldClock> clock = server.registryAccess().getOrThrow(WorldClocks.OVERWORLD);
+		long start = copy.clockManager().getTotalTicks(clock);
+		helper.runAfterDelay(40, () -> {
+			long now = copy.clockManager().getTotalTicks(clock);
+			handle.delete();
+			check(helper, now > start, "run world clock stood still at " + now + " for 40 ticks");
+			helper.succeed();
+		});
+	}
+
+	/** Morning Coffee only brews in the minute after waking up. */
+	@GameTest
+	public void morningCoffeeNeedsWakingUp(GameTestHelper helper) {
+		ServerPlayer player = helper.makeMockServerPlayerInLevel();
+		CraftingMenu menu = new CraftingMenu(0, player.getInventory(), ContainerLevelAccess.create(helper.getLevel(), helper.absolutePos(BlockPos.ZERO)));
+		// R R / RCR / RBR: buttons around a bed, a torch below it.
+		Item[] grid = {Items.OAK_BUTTON, Items.AIR, Items.OAK_BUTTON, Items.OAK_BUTTON, Items.RED_BED, Items.OAK_BUTTON,
+			Items.OAK_BUTTON, Items.TORCH, Items.OAK_BUTTON};
+		for (int i = 0; i < grid.length; i++) {
+			menu.getSlot(1 + i).set(new ItemStack(grid[i]));
+		}
+		ItemStack before = menu.getSlot(0).getItem();
+
+		PowerUps.openCoffeeWindow(player);
+		menu.slotsChanged(menu.getSlot(1).container);
+		ItemStack after = menu.getSlot(0).getItem();
+		PowerUps.clear(player);
+		helper.getLevel().getServer().getPlayerList().remove(player);
+
+		check(helper, before.isEmpty(), "Morning Coffee crafted without waking up: " + before);
+		check(helper, Power.of(after) == Power.MORNING_COFFEE, "no Morning Coffee right after waking up, got " + after);
+		helper.succeed();
 	}
 
 	private static Entity cow(ServerLevel level, BlockPos pos) {

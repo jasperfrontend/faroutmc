@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.25 - 2026-10-24
+
+- You can sleep during a run again. Since 1.0.21 the run's clock stood still at sunrise, even though your sky went on into the night, so every bed said you could only sleep at night. The run's clock now runs, and sleeping skips the night as it should. If your own world has the daylight cycle off, your runs keep it off too.
+- Morning Coffee can now only be crafted in the minute after you wake up, as the recipe board always said. Until now it could be crafted at any time.
+
 ## 1.0.24 - 2026-10-22
 
 - New command `/farout here`: the start area is built where you're standing instead of at spawn, in the run's copy of your world. Found a beautiful spot? Start your next run from there. It works in the overworld and during a session (before the run starts, or in the few seconds after a finish), not in the Nether or the End.
