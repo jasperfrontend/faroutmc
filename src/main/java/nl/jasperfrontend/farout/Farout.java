@@ -31,6 +31,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelData;
 import org.slf4j.Logger;
@@ -82,7 +83,11 @@ public class Farout implements ModInitializer {
 			LiteralArgumentBuilder<CommandSourceStack> settings = Commands.literal("settings")
 				.executes(ctx -> showSettings(ctx.getSource()));
 			for (String name : Settings.NAMES) {
-				String unit = name.equals(Settings.AIRTIME_SECONDS) ? "seconds" : "blocks";
+				String unit = switch (name) {
+					case Settings.AIRTIME_SECONDS -> "seconds";
+					case Settings.BONUS_CHEST -> "enabled";
+					default -> "blocks";
+				};
 				settings.then(Commands.literal(name)
 					.then(Commands.argument(unit, IntegerArgumentType.integer(Settings.min(name), Settings.max(name)))
 						.executes(ctx -> setSetting(ctx.getSource(), name, IntegerArgumentType.getInteger(ctx, unit)))));
@@ -154,6 +159,7 @@ public class Farout implements ModInitializer {
 			Airtime.cancel(player);
 			IN_HUB.remove(player.getUUID());
 			HUBS.remove(player.getUUID());
+			BonusChest.forget(player);
 			RunWorlds.close(player.getUUID(), 0);
 			// Saved after this, so they log back in where they started, with their own things.
 			if (Stash.has(player) || RunWorlds.isRunWorld(player.level().dimension())) {
@@ -177,6 +183,7 @@ public class Farout implements ModInitializer {
 			Airtime.forgetAll();
 			SplitBoard.forgetAll();
 			PowerUps.clearAll();
+			BonusChest.forgetAll();
 			RunWorlds.forgetAll();
 		});
 	}
@@ -212,19 +219,24 @@ public class Farout implements ModInitializer {
 		leaveHub(player);
 		// Starting again from the hub or right after a finish keeps the stash from the first start.
 		Stash.save(player);
+		Settings settings = Settings.load();
 		ServerLevel level = RunWorlds.open(player);
 		BlockPos centre = SpawnHub.centre(level, spot != null ? spot : level.getServer().overworld().getRespawnData().pos());
 		SpawnHub.build(level, centre);
 		SpawnHub.clearEntities(level, centre);
 		SpawnHub.labels(level, centre);
+		BonusChest.forget(player);
+		if (settings.bonusChest == 1) {
+			BonusChest.place(player, level, centre);
+		}
 		HUBS.put(player.getUUID(), centre);
 		resetToFreshSpawn(player);
 		SplitBoard.clear(player);
 
-		Settings settings = Settings.load();
 		if (settings.airtimeHeight == 0) {
-			player.teleportTo(level, centre.getX() + 0.5, centre.getY(), centre.getZ() + 0.5, Set.of(),
-				Heading.NORTH.yaw, 0f, true);
+			// On top of the bonus chest, if there is one, as Airtime would have dropped them.
+			player.teleportTo(level, centre.getX() + 0.5, centre.getY() + (BonusChest.placed(player) ? 1 : 0),
+				centre.getZ() + 0.5, Set.of(), Heading.NORTH.yaw, 0f, true);
 			IN_HUB.put(player.getUUID(), centre);
 			sendRunState(player, true);
 			player.sendSystemMessage(Component.literal("Walk through a portal to pick your direction."));
@@ -249,6 +261,7 @@ public class Farout implements ModInitializer {
 
 		Airtime.cancel(player);
 		leaveHub(player);
+		BonusChest.forget(player);
 		Stash.save(player);
 		BlockPos origin = teleportToSpawn(player, RunWorlds.open(player), heading.yaw);
 		beginRun(player, heading, origin, heading.lateral(origin), null);
@@ -297,7 +310,10 @@ public class Farout implements ModInitializer {
 		// Start like a brand-new world: a freshly spawned player, clear skies, at the time a new world begins.
 		// The time is the run world's own clock; weather is one for the whole server, so that clears at home too.
 		HUBS.remove(player.getUUID());
+		// Bonus chest loot comes through the reset; anything else picked up in the start area doesn't.
+		Map<Integer, ItemStack> loot = BonusChest.release(player);
 		resetToFreshSpawn(player);
+		loot.forEach(player.getInventory()::setItem);
 		MinecraftServer server = player.level().getServer();
 		CommandSourceStack source = server.createCommandSourceStack().withLevel(player.level()).withSuppressedOutput();
 		server.getCommands().performPrefixedCommand(source, "time set 0");
@@ -307,8 +323,11 @@ public class Farout implements ModInitializer {
 		Lane lane = new Lane(heading, laneCentre, settings.pathWidth, settings.leewayBlocks, player);
 		// A start area away from spawn is from /farout here, and that course keeps its own personal bests.
 		BlockPos spot = hub != null ? spot(server, hub) : null;
-		long[] pb = PersonalBests.load(heading, player.level().getSeed(), spot);
-		RUNS.put(player.getUUID(), new Run(heading, player.level(), origin, hub != null ? hub : origin, spot, lane, pb));
+		// The bonus chest saves so much time that runs with it are a category of their own.
+		boolean bonusChest = BonusChest.placed(player);
+		long[] pb = PersonalBests.load(heading, player.level().getSeed(), spot, bonusChest);
+		RUNS.put(player.getUUID(),
+			new Run(heading, player.level(), origin, hub != null ? hub : origin, spot, bonusChest, lane, pb));
 		sendRunState(player, true);
 		if (ServerPlayNetworking.canSend(player, LanePayload.TYPE)) {
 			ServerPlayNetworking.send(player, lane.payload());
@@ -319,7 +338,8 @@ public class Farout implements ModInitializer {
 				+ settings.pathWidth + "-wide lane; " + Format.blocks(settings.leewayBlocks) + " blocks of leeway."));
 		if (pb == null) {
 			player.sendSystemMessage(Component.literal("No personal best for " + heading.label
-				+ (spot != null ? " from this spot" : "") + " on this seed yet.").withStyle(ChatFormatting.GRAY));
+				+ (spot != null ? " from this spot" : "") + (bonusChest ? " with the bonus chest" : "")
+				+ " on this seed yet.").withStyle(ChatFormatting.GRAY));
 		}
 	}
 
@@ -375,6 +395,7 @@ public class Farout implements ModInitializer {
 		Airtime.cancel(player);
 		leaveHub(player);
 		HUBS.remove(player.getUUID());
+		BonusChest.forget(player);
 		RunWorlds.close(player.getUUID(), 0);
 	}
 
@@ -435,6 +456,8 @@ public class Farout implements ModInitializer {
 	private static void tick(MinecraftServer server) {
 		Airtime.tick(server);
 		tickHub(server);
+		// After tickHub: a run that just started reset their health, and the greedy go straight back to half a heart.
+		BonusChest.tick(server);
 		PowerUps.tick(server);
 		RunWorlds.tick(server);
 
@@ -587,7 +610,7 @@ public class Farout implements ModInitializer {
 			player.sendSystemMessage(Component.literal("New personal best!")
 				.withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
 			try {
-				PersonalBests.save(run.heading, run.level.getSeed(), run.spot, run.splits);
+				PersonalBests.save(run.heading, run.level.getSeed(), run.spot, run.bonusChest, run.splits);
 			} catch (IOException e) {
 				LOGGER.error("Could not write personal bests", e);
 				player.sendSystemMessage(Component.literal("Could not save personal best: " + e.getMessage())
@@ -601,7 +624,7 @@ public class Farout implements ModInitializer {
 			player.getRandom().nextLong()));
 
 		try {
-			ResultsLog.append(run.heading, run.ticks, server.overworld().getSeed(), run.start);
+			ResultsLog.append(run.heading, run.ticks, server.overworld().getSeed(), run.start, run.bonusChest);
 		} catch (IOException e) {
 			LOGGER.error("Could not write results.csv", e);
 			player.sendSystemMessage(Component.literal("Could not write results.csv: " + e.getMessage())

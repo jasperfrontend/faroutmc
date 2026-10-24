@@ -18,7 +18,8 @@ import java.util.Properties;
  * Keyed by target and split interval too, so test runs (runClientShort) never mix with real ones.
  * Keys from before 1.0.23 have no seed; they stay in the file but are no longer read.
  * Runs from /farout here are kept per spot as well, with its x and z on the end of the key: another start is
- * another course.
+ * another course. Runs with the bonus chest get ".bonus" on the end: it saves so much time that they'd
+ * leave every run without it behind.
  */
 final class PersonalBests {
 	private PersonalBests() {
@@ -29,14 +30,17 @@ final class PersonalBests {
 	}
 
 	/** spot: the start area's centre for a run from /farout here, null for one from spawn. */
-	private static String key(Heading heading, long seed, BlockPos spot) {
+	private static String key(Heading heading, long seed, BlockPos spot, boolean bonusChest) {
 		String key = heading.id() + "." + seed + "." + Farout.TARGET + "." + Farout.SPLIT_INTERVAL;
-		return spot == null ? key : key + "." + spot.getX() + "." + spot.getZ();
+		if (spot != null) {
+			key += "." + spot.getX() + "." + spot.getZ();
+		}
+		return bonusChest ? key + ".bonus" : key;
 	}
 
 	/** Split ticks of the personal best (the last entry is the finish), or null if there is none. */
-	static long[] load(Heading heading, long seed, BlockPos spot) {
-		String key = key(heading, seed, spot);
+	static long[] load(Heading heading, long seed, BlockPos spot, boolean bonusChest) {
+		String key = key(heading, seed, spot, bonusChest);
 		String value = read().getProperty(key);
 		if (value == null || value.isBlank()) {
 			return null;
@@ -49,9 +53,9 @@ final class PersonalBests {
 		}
 	}
 
-	static void save(Heading heading, long seed, BlockPos spot, List<Long> splits) throws IOException {
+	static void save(Heading heading, long seed, BlockPos spot, boolean bonusChest, List<Long> splits) throws IOException {
 		Properties props = read();
-		props.setProperty(key(heading, seed, spot), String.join(",", splits.stream().map(String::valueOf).toList()));
+		props.setProperty(key(heading, seed, spot, bonusChest), String.join(",", splits.stream().map(String::valueOf).toList()));
 		Path file = file();
 		Files.createDirectories(file.getParent());
 		try (Writer writer = Files.newBufferedWriter(file)) {

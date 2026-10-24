@@ -18,13 +18,15 @@ public final class Settings {
 	public static final String LEEWAY_BLOCKS = "leewayBlocks";
 	public static final String AIRTIME_HEIGHT = "airtimeHeight";
 	public static final String AIRTIME_SECONDS = "airtimeSeconds";
+	public static final String BONUS_CHEST = "bonusChest";
 	/** Every setting, in the order they're listed. */
-	public static final String[] NAMES = {PATH_WIDTH, LEEWAY_BLOCKS, AIRTIME_HEIGHT, AIRTIME_SECONDS};
+	public static final String[] NAMES = {PATH_WIDTH, LEEWAY_BLOCKS, AIRTIME_HEIGHT, AIRTIME_SECONDS, BONUS_CHEST};
 
 	static final int DEFAULT_PATH_WIDTH = 7;
 	static final int DEFAULT_LEEWAY_BLOCKS = 200;
 	static final int DEFAULT_AIRTIME_HEIGHT = 50;
 	static final int DEFAULT_AIRTIME_SECONDS = 30;
+	static final int DEFAULT_BONUS_CHEST = 1;
 
 	/** Width in blocks of the lane you must stay in, centred on the start line. */
 	final int pathWidth;
@@ -34,12 +36,15 @@ public final class Settings {
 	final int airtimeHeight;
 	/** How long airtime lasts before the drop. */
 	final int airtimeSeconds;
+	/** 1 puts a {@link BonusChest} in the middle of the start area, 0 leaves it out. */
+	final int bonusChest;
 
-	private Settings(int pathWidth, int leewayBlocks, int airtimeHeight, int airtimeSeconds) {
+	private Settings(int pathWidth, int leewayBlocks, int airtimeHeight, int airtimeSeconds, int bonusChest) {
 		this.pathWidth = pathWidth;
 		this.leewayBlocks = leewayBlocks;
 		this.airtimeHeight = airtimeHeight;
 		this.airtimeSeconds = airtimeSeconds;
+		this.bonusChest = bonusChest;
 	}
 
 	private static Path file() {
@@ -50,7 +55,7 @@ public final class Settings {
 	public static int min(String name) {
 		return switch (name) {
 			case PATH_WIDTH, AIRTIME_SECONDS -> 1;
-			case LEEWAY_BLOCKS, AIRTIME_HEIGHT -> 0;
+			case LEEWAY_BLOCKS, AIRTIME_HEIGHT, BONUS_CHEST -> 0;
 			default -> throw new IllegalArgumentException("Unknown setting " + name);
 		};
 	}
@@ -61,6 +66,7 @@ public final class Settings {
 			case PATH_WIDTH -> 64;
 			case LEEWAY_BLOCKS -> 100_000;
 			case AIRTIME_HEIGHT, AIRTIME_SECONDS -> 300;
+			case BONUS_CHEST -> 1;
 			default -> throw new IllegalArgumentException("Unknown setting " + name);
 		};
 	}
@@ -71,6 +77,7 @@ public final class Settings {
 			case LEEWAY_BLOCKS -> DEFAULT_LEEWAY_BLOCKS;
 			case AIRTIME_HEIGHT -> DEFAULT_AIRTIME_HEIGHT;
 			case AIRTIME_SECONDS -> DEFAULT_AIRTIME_SECONDS;
+			case BONUS_CHEST -> DEFAULT_BONUS_CHEST;
 			default -> throw new IllegalArgumentException("Unknown setting " + name);
 		};
 	}
@@ -81,6 +88,7 @@ public final class Settings {
 			case LEEWAY_BLOCKS -> leewayBlocks;
 			case AIRTIME_HEIGHT -> airtimeHeight;
 			case AIRTIME_SECONDS -> airtimeSeconds;
+			case BONUS_CHEST -> bonusChest;
 			default -> throw new IllegalArgumentException("Unknown setting " + name);
 		};
 	}
@@ -92,7 +100,8 @@ public final class Settings {
 			readInt(props, PATH_WIDTH, DEFAULT_PATH_WIDTH, 1),
 			readInt(props, LEEWAY_BLOCKS, DEFAULT_LEEWAY_BLOCKS, 0),
 			readInt(props, AIRTIME_HEIGHT, DEFAULT_AIRTIME_HEIGHT, 0),
-			readInt(props, AIRTIME_SECONDS, DEFAULT_AIRTIME_SECONDS, 1));
+			readInt(props, AIRTIME_SECONDS, DEFAULT_AIRTIME_SECONDS, 1),
+			Math.min(1, readInt(props, BONUS_CHEST, DEFAULT_BONUS_CHEST, 0)));
 		if (Files.notExists(file())) {
 			try {
 				settings.save();
@@ -105,10 +114,11 @@ public final class Settings {
 
 	public Settings with(String name, int value) {
 		return switch (name) {
-			case PATH_WIDTH -> new Settings(value, leewayBlocks, airtimeHeight, airtimeSeconds);
-			case LEEWAY_BLOCKS -> new Settings(pathWidth, value, airtimeHeight, airtimeSeconds);
-			case AIRTIME_HEIGHT -> new Settings(pathWidth, leewayBlocks, value, airtimeSeconds);
-			case AIRTIME_SECONDS -> new Settings(pathWidth, leewayBlocks, airtimeHeight, value);
+			case PATH_WIDTH -> new Settings(value, leewayBlocks, airtimeHeight, airtimeSeconds, bonusChest);
+			case LEEWAY_BLOCKS -> new Settings(pathWidth, value, airtimeHeight, airtimeSeconds, bonusChest);
+			case AIRTIME_HEIGHT -> new Settings(pathWidth, leewayBlocks, value, airtimeSeconds, bonusChest);
+			case AIRTIME_SECONDS -> new Settings(pathWidth, leewayBlocks, airtimeHeight, value, bonusChest);
+			case BONUS_CHEST -> new Settings(pathWidth, leewayBlocks, airtimeHeight, airtimeSeconds, value);
 			default -> throw new IllegalArgumentException("Unknown setting " + name);
 		};
 	}
@@ -119,13 +129,15 @@ public final class Settings {
 		props.setProperty(LEEWAY_BLOCKS, Integer.toString(leewayBlocks));
 		props.setProperty(AIRTIME_HEIGHT, Integer.toString(airtimeHeight));
 		props.setProperty(AIRTIME_SECONDS, Integer.toString(airtimeSeconds));
+		props.setProperty(BONUS_CHEST, Integer.toString(bonusChest));
 		Path file = file();
 		Files.createDirectories(file.getParent());
 		try (Writer writer = Files.newBufferedWriter(file)) {
 			props.store(writer, "Farout settings: " + PATH_WIDTH + " = lane width in blocks, "
 				+ LEEWAY_BLOCKS + " = blocks you may walk outside it per run, "
 			+ AIRTIME_HEIGHT + " = blocks above the start area you hang before the drop (0 = no airtime), "
-			+ AIRTIME_SECONDS + " = seconds of airtime before the drop");
+			+ AIRTIME_SECONDS + " = seconds of airtime before the drop, "
+			+ BONUS_CHEST + " = 1 for a bonus chest in the start area, 0 for none");
 		}
 	}
 

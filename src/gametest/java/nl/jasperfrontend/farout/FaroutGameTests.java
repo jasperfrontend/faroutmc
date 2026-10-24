@@ -16,6 +16,7 @@ import net.minecraft.world.clock.WorldClock;
 import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.ContainerLevelAccess;
@@ -26,7 +27,9 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.StairBlock;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import org.spongepowered.asm.mixin.MixinEnvironment;
 import xyz.nucleoid.fantasy.RuntimeLevelHandle;
 
@@ -35,6 +38,8 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Run on a real dedicated server by .\gradlew runGameTest. Booting at all proves the mod loads: its
@@ -64,27 +69,117 @@ public class FaroutGameTests {
 		helper.succeed();
 	}
 
-	/** A results.csv from before 1.0.24 gets the start column once, and keeps its runs; new runs record their start. */
+	/**
+	 * A results.csv from before 1.0.24 gets the start and bonusChest columns once, and keeps its runs; new runs
+	 * record their start and bonus chest.
+	 */
 	@GameTest
 	public void resultsLogMigrates(GameTestHelper helper) {
 		try {
 			Path file = Files.createTempDirectory("farout").resolve("results.csv");
 			Files.writeString(file, "date,direction,time,seed\n2026-10-17T20:00:00,north,08:12.4,8675309\n");
-			ResultsLog.append(file, Heading.EAST, 9000, 42, new BlockPos(300, 64, -12));
-			ResultsLog.append(file, Heading.WEST, 9100, 42, new BlockPos(-5, 70, 8));
+			ResultsLog.append(file, Heading.EAST, 9000, 42, new BlockPos(300, 64, -12), true);
+			ResultsLog.append(file, Heading.WEST, 9100, 42, new BlockPos(-5, 70, 8), false);
 
 			List<String> lines = Files.readAllLines(file);
-			check(helper, lines.size() == 4 && lines.getFirst().equals("date,direction,time,seed,start"),
+			check(helper, lines.size() == 4 && lines.getFirst().equals("date,direction,time,seed,start,bonusChest")
+				&& lines.get(1).equals("2026-10-17T20:00:00,north,08:12.4,8675309,,no"),
 				"results.csv after migrating: " + lines);
 			List<ResultsLog.Result> results = ResultsLog.load(file);
 			check(helper, results.size() == 3, "read back " + results.size() + " runs: " + results);
-			check(helper, results.get(0).direction().equals("north") && results.get(0).start().isEmpty(),
-				"old run after migrating: " + results.get(0));
+			check(helper, results.get(0).direction().equals("north") && results.get(0).start().isEmpty()
+				&& !results.get(0).bonusChest(), "old run after migrating: " + results.get(0));
 			check(helper, results.get(1).start().equals("300 64 -12") && results.get(2).start().equals("-5 70 8"),
 				"starts read back as " + results.get(1).start() + " and " + results.get(2).start());
+			check(helper, results.get(1).bonusChest() && !results.get(2).bonusChest(),
+				"bonus chests read back as " + results.get(1).bonusChest() + " and " + results.get(2).bonusChest());
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
+		helper.succeed();
+	}
+
+	/** A results.csv from 1.0.24 or 1.0.25 keeps its starts and gets "no" bonus chest, which didn't exist yet. */
+	@GameTest
+	public void resultsLogMigratesStarts(GameTestHelper helper) {
+		try {
+			Path file = Files.createTempDirectory("farout").resolve("results.csv");
+			Files.writeString(file, "date,direction,time,seed,start\n2026-10-22T20:00:00,south,07:55.0,42,1 2 3\n");
+			List<ResultsLog.Result> results = ResultsLog.load(file);
+			check(helper, results.size() == 1 && results.getFirst().start().equals("1 2 3") && !results.getFirst().bonusChest(),
+				"run from 1.0.25 after migrating: " + results);
+			check(helper, Files.readAllLines(file).get(1).equals("2026-10-22T20:00:00,south,07:55.0,42,1 2 3,no"),
+				"results.csv after migrating: " + Files.readAllLines(file));
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		helper.succeed();
+	}
+
+	/**
+	 * Loot taken from the bonus chest comes through the run's start as plain items that stack with what you find;
+	 * the diamond stays put and so does the player's health.
+	 */
+	@GameTest
+	public void bonusChestLootComesThroughPlain(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		ServerPlayer player = helper.makeMockServerPlayerInLevel();
+		BlockPos pos = helper.absolutePos(new BlockPos(2, 1, 2));
+		BonusChest.place(player, level, pos);
+		ChestBlockEntity chest = (ChestBlockEntity) level.getBlockEntity(pos);
+		player.getInventory().setItem(0, chest.removeItemNoUpdate(1));
+		player.getInventory().setItem(5, chest.removeItemNoUpdate(5));
+		player.getInventory().setItem(6, new ItemStack(Items.OAK_LOG));
+
+		BonusChest.tick(level.getServer());
+		Map<Integer, ItemStack> loot = BonusChest.release(player);
+		float health = player.getHealth();
+		boolean chestStands = level.getBlockState(pos).is(Blocks.CHEST);
+		BonusChest.forget(player);
+		level.getServer().getPlayerList().remove(player);
+
+		check(helper, loot.keySet().equals(Set.of(0, 5)), "loot kept from slots " + loot.keySet() + ", expected 0 and 5");
+		check(helper, ItemStack.isSameItemSameComponents(loot.get(0), new ItemStack(Items.DIAMOND_PICKAXE)),
+			"pickaxe came through as " + loot.get(0) + " " + loot.get(0).getComponentsPatch());
+		check(helper, loot.get(5).getCount() == 64 && ItemStack.isSameItemSameComponents(loot.get(5), new ItemStack(Items.DIRT)),
+			"dirt came through as " + loot.get(5) + " " + loot.get(5).getComponentsPatch());
+		check(helper, ItemStack.isSameItemSameComponents(chest.getItem(7), new ItemStack(Items.COOKED_BEEF)),
+			"steak left in the chest is still marked: " + chest.getItem(7).getComponentsPatch());
+		check(helper, BonusChest.isDiamond(chest.getItem(13)), "the diamond isn't in the middle of the chest: " + chest.getItem(13));
+		check(helper, chestStands && health == player.getMaxHealth(), "taking the loot set off the trap");
+		helper.succeed();
+	}
+
+	/** Taking the diamond blows the chest up with what's left in it, empties the inventory, and keeps you on half a heart. */
+	@GameTest
+	public void bonusChestDiamondBlowsUp(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		ServerPlayer player = helper.makeMockServerPlayerInLevel();
+		BlockPos pos = helper.absolutePos(new BlockPos(2, 1, 2));
+		BonusChest.place(player, level, pos);
+		ChestBlockEntity chest = (ChestBlockEntity) level.getBlockEntity(pos);
+		player.getInventory().setItem(0, chest.removeItemNoUpdate(1));
+		player.getInventory().setItem(7, new ItemStack(Items.OAK_LOG, 12));
+		player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+		player.getInventory().setItem(1, chest.removeItemNoUpdate(13));
+
+		BonusChest.tick(level.getServer());
+		float health = player.getHealth();
+		boolean inventoryEmpty = player.getInventory().isEmpty();
+		player.heal(10f);
+		player.setAbsorptionAmount(4f);
+		BonusChest.tick(level.getServer());
+		float healed = player.getHealth();
+		float absorption = player.getAbsorptionAmount();
+		BonusChest.forget(player);
+		level.getServer().getPlayerList().remove(player);
+
+		check(helper, health == 1f, "health after taking the diamond is " + health + ", expected half a heart");
+		check(helper, inventoryEmpty, "the inventory wasn't emptied when the chest blew up");
+		check(helper, level.getBlockState(pos).isAir(), "the chest is still there: " + level.getBlockState(pos));
+		check(helper, level.getEntitiesOfClass(ItemEntity.class, new AABB(pos).inflate(4)).isEmpty(),
+			"the chest spilled its loot when it blew up");
+		check(helper, healed == 1f && absorption == 0f, "healed back up to " + healed + " + " + absorption + " absorption");
 		helper.succeed();
 	}
 

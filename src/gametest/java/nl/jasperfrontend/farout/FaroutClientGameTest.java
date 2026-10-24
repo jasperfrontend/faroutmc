@@ -22,6 +22,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.phys.Vec3;
 import nl.jasperfrontend.farout.client.FaroutSettingsScreen;
 import org.lwjgl.glfw.GLFW;
@@ -60,6 +61,7 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 			.create()) {
 			TestServerContext server = singleplayer.getServer();
 			server.runCommand("farout settings airtimeHeight 0");
+			server.runCommand("farout settings bonusChest 1");
 
 			// An existing world: something built at spawn, an armour stand, and a player with things of their own.
 			// Worked out once: the build raises the ground there, so asking again later would look higher up.
@@ -95,12 +97,17 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 				check(player.level().getSeed() == Long.parseLong(SEED), "run world has seed " + player.level().getSeed());
 				check(player.getInventory().isEmpty() && player.experienceLevel == 0, "not a fresh player in the hub");
 				assertHomeUntouched(s, spawn);
+				// Take the pickaxe from the bonus chest: it has to come along through the portal.
+				BlockPos centre = hub(player.level(), s.overworld().getRespawnData().pos());
+				check(player.level().getBlockEntity(centre) instanceof ChestBlockEntity, "no bonus chest in the middle of the hub");
+				ChestBlockEntity chest = (ChestBlockEntity) player.level().getBlockEntity(centre);
+				player.getInventory().setItem(0, chest.removeItemNoUpdate(1));
 			});
 
 			// Across the north portal: the run starts, in the same world.
 			ResourceKey<Level> first = server.computeOnServer(s -> {
 				ServerPlayer player = player(s);
-				BlockPos centre = SpawnHub.centre(player.level(), s.overworld().getRespawnData().pos());
+				BlockPos centre = hub(player.level(), s.overworld().getRespawnData().pos());
 				player.teleportTo(player.level(), centre.getX() + 0.5, centre.getY(), centre.getZ() - 4.5, Set.of(),
 					Heading.NORTH.yaw, 0f, true);
 				return player.level().dimension();
@@ -110,6 +117,8 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 				ServerPlayer player = player(s);
 				check(player.level().dimension() == first, "crossing the portal changed worlds");
 				check(!player.canUsePortal(false), "portals work in a run world");
+				check(ItemStack.isSameItemSameComponents(player.getInventory().getItem(0), new ItemStack(Items.DIAMOND_PICKAXE)),
+					"the bonus chest's pickaxe didn't come through the portal as a plain one: " + player.getInventory().getItem(0));
 				// Something to leave behind: it must not be there on the next run.
 				player.level().setBlock(player.blockPosition().above(2), Blocks.GOLD_BLOCK.defaultBlockState(), Block.UPDATE_ALL);
 			});
@@ -177,9 +186,9 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 			check(context.computeOnClient(minecraft -> minecraft.screen) == null, "a prompt showed for an already saved seed");
 			check(read(saved).contains("east"), "East wasn't added to the saved seed: " + read(saved));
 			List<String> csv = read(results).lines().toList();
-			check(csv.size() == 3 && csv.get(0).equals("date,direction,time,seed,start")
-				&& csv.get(1).equals("2026-10-17T20:00:00,north,08:12.4," + SEED + ",")
-				&& csv.get(2).matches(".*,east,.*," + SEED + ",-?\\d+ -?\\d+ -?\\d+"),
+			check(csv.size() == 3 && csv.get(0).equals("date,direction,time,seed,start,bonusChest")
+				&& csv.get(1).equals("2026-10-17T20:00:00,north,08:12.4," + SEED + ",,no")
+				&& csv.get(2).matches(".*,east,.*," + SEED + ",-?\\d+ -?\\d+ -?\\d+,no"),
 				"results.csv after finishing: " + csv);
 			server.runOnServer(s -> {
 				assertHome(s, home, spawn, "finishing");
@@ -201,7 +210,7 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 			context.waitTicks(10);
 			server.runOnServer(s -> {
 				ServerPlayer player = player(s);
-				BlockPos centre = SpawnHub.centre(player.level(), s.overworld().getRespawnData().pos());
+				BlockPos centre = hub(player.level(), s.overworld().getRespawnData().pos());
 				check(RunWorlds.isRunWorld(player.level().dimension()) && SpawnHub.inCentre(centre, player.blockPosition()),
 					"didn't land in the hub after Airtime: " + player.level().dimension() + " " + player.blockPosition());
 			});
@@ -226,7 +235,7 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 			context.takeScreenshot("farout-5c-here");
 			server.runOnServer(s -> {
 				ServerPlayer player = player(s);
-				BlockPos centre = SpawnHub.centre(player.level(), BlockPos.containing(lookout));
+				BlockPos centre = hub(player.level(), BlockPos.containing(lookout));
 				check(RunWorlds.isRunWorld(player.level().dimension()) && SpawnHub.inCentre(centre, player.blockPosition()),
 					"/farout here didn't put them in a start area where they stood: " + player.blockPosition());
 				check(player.level().getBlockState(centre.offset(0, 0, -4)).is(Blocks.PURPLE_CARPET),
@@ -265,6 +274,11 @@ public class FaroutClientGameTest implements FabricClientGameTest {
 			check(clipboard.matches("/tp -?\\d+ -?\\d+ -?\\d+"), "Copy /tp copied " + clipboard);
 			context.clickScreenButton("gui.cancel");
 		}
+	}
+
+	/** The centre of a start area that's been built: the bonus chest in its middle is the ground there now. */
+	private static BlockPos hub(ServerLevel level, BlockPos spot) {
+		return SpawnHub.centre(level, spot).below();
 	}
 
 	/** Back where they stood before /farout start, with their own things, and the real spawn untouched. */

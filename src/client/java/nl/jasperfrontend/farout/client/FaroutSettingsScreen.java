@@ -276,7 +276,8 @@ public class FaroutSettingsScreen extends Screen {
 
 		ResultRow(ResultsLog.Result result) {
 			String day = result.date().length() >= 10 ? result.date().substring(0, 10) : result.date();
-			run = Component.literal(SeedPrompt.label(result.direction()) + " · " + result.time() + " · " + day);
+			run = Component.literal(SeedPrompt.label(result.direction()) + " · " + result.time() + " · " + day
+				+ (result.bonusChest() ? " · bonus chest" : ""));
 			start = Component.literal((result.start().isEmpty() ? "Start not recorded" : result.start())
 				+ " · seed " + result.seed());
 			if (result.start().isEmpty()) {

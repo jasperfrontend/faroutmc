@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.26 - 2026-10-24
+
+- A bonus chest now stands in the middle of the start area, for `/farout start` and `/farout here`: a diamond pickaxe, axe, shovel and hoe, 128 dirt and 64 steak. Less time punching trees and fighting hunger, more time running. Whatever you take from it comes along when you step through a portal.
+- There's also a diamond in there. It's labelled. Take it anyway and your greed will be severely punished. How? You're best off never finding that out (which you will, I know. Good luck with that!)
+- Runs with the bonus chest have their own personal bests, since they're a lot faster. Your existing personal bests stay with runs without it.
+- Don't want it? Set `bonusChest` to 0 in `/farout menu`, or type `/farout settings bonusChest 0`.
+- `results.csv` has a new `bonusChest` column. Your existing runs are marked `no`, as there wasn't a chest yet.
+
 ## 1.0.25 - 2026-10-24
 
 - You can sleep during a run again. Since 1.0.21 the run's clock stood still at sunrise, even though your sky went on into the night, so every bed said you could only sleep at night. The run's clock now runs, and sleeping skips the night as it should. If your own world has the daylight cycle off, your runs keep it off too.
