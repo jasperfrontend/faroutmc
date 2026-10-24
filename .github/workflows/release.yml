@@ -1,0 +1,67 @@
+# Push a tag like v1.0.27 (matching "version" in gradle.properties) to upload that version to CurseForge
+# as a Release, with its section of CHANGELOG.md as the release notes. Playtest first: the client game test
+# (runClientGameTest) can't run here, so the tag is the "ship it to players" button.
+#
+# Needs the repo secret CURSEFORGE_TOKEN (CurseForge account settings > API tokens).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  curseforge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check tag matches gradle.properties version
+        run: |
+          VERSION=$(sed -n 's/^version=//p' gradle.properties | tr -d '\r')
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $VERSION in gradle.properties"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # Everything under "## <version> - <date>" up to the next version's heading.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v heading="## $VERSION " 'index($0, heading) == 1 {on = 1; next} on && /^## / {exit} on {print}' \
+            CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::No entry for $VERSION in CHANGELOG.md"
+            exit 1
+          fi
+          cat release-notes.md
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      # The same gate as ci.yml: nothing reaches CurseForge without it.
+      - run: ./gradlew build runGameTest
+
+      - name: Upload to CurseForge
+        uses: Kir-Antipov/mc-publish@v3.3.2
+        with:
+          curseforge-id: 1750218
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          files: build/libs/farout-${{ env.VERSION }}.jar
+          name: Farout-${{ env.VERSION }}
+          version: ${{ env.VERSION }}
+          version-type: release
+          changelog-file: release-notes.md
+          loaders: fabric
+          game-versions: 26.1.2
+          dependencies: |
+            fabric-api(required)
+            modmenu(optional)
