@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.27 - 2026-11-01
+
+- The settings in `/farout menu` have readable names now: Path Width, Leeway Blocks, Airtime Height, Airtime Seconds and Bonus Chest. Hover over a field to see its range, its default and the command that changes it. `/farout settings pathWidth 7` and the rest work exactly as before.
+
 ## 1.0.26 - 2026-10-24
 
 - A bonus chest now stands in the middle of the start area, for `/farout start` and `/farout here`: a diamond pickaxe, axe, shovel and hoe, 128 dirt and 64 steak. Less time punching trees and fighting hunger, more time running. Whatever you take from it comes along when you step through a portal.

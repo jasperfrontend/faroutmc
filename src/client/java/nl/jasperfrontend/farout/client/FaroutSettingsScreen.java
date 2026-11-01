@@ -187,13 +187,13 @@ public class FaroutSettingsScreen extends Screen {
 		private final EditBox field;
 
 		SettingRow(String name, int value) {
-			label = Component.literal(name);
+			label = Component.literal(Settings.label(name));
 			field = new EditBox(font, FIELD_WIDTH, 20, label);
 			field.setMaxLength(7);
 			field.setValue(Integer.toString(value));
 			field.setResponder(text -> validate());
 			field.setTooltip(Tooltip.create(Component.literal(Settings.min(name) + " to " + Settings.max(name)
-				+ ", default " + Settings.defaultValue(name))));
+				+ ", default " + Settings.defaultValue(name) + ". Command: /farout settings " + name)));
 			fields.put(name, field);
 		}
 

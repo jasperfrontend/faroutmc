@@ -51,6 +51,18 @@ public final class Settings {
 		return FabricLoader.getInstance().getConfigDir().resolve("farout").resolve("settings.properties");
 	}
 
+	/** How the settings screen shows a setting; the command and the file keep using the name. */
+	public static String label(String name) {
+		return switch (name) {
+			case PATH_WIDTH -> "Path Width";
+			case LEEWAY_BLOCKS -> "Leeway Blocks";
+			case AIRTIME_HEIGHT -> "Airtime Height";
+			case AIRTIME_SECONDS -> "Airtime Seconds";
+			case BONUS_CHEST -> "Bonus Chest";
+			default -> throw new IllegalArgumentException("Unknown setting " + name);
+		};
+	}
+
 	/** Lowest value the command and the settings screen accept. */
 	public static int min(String name) {
 		return switch (name) {
