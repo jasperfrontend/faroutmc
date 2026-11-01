@@ -62,6 +62,10 @@ jobs:
           changelog-file: release-notes.md
           loaders: fabric
           game-versions: 26.1.2
+          # Not read from fabric.mod.json's depends.java: mc-publish only tags what's listed here.
+          java: 25
+          # A single-player client mod. fabric.mod.json keeps "*" because the game tests run on a server.
+          environment: client
           dependencies: |
             fabric-api(required)
             modmenu(optional)
